@@ -4,7 +4,7 @@ The Eye of Chad is a small web application that visualizes Tezos blockchain tran
 
 ## How to use
 There are two sliders - transaction depth slider and a dust filter slider (for the case when there are too many dust inputs or outputs)
-To start, set the parameters (default are 1000 tx depth and no filtering by amount), input the address and cick the eye (or just hit enter key). This will draw a diagram visualizing tez flow in and out of address.
+To start, set the parameters (default are 1000 tx depth and no filtering by amount), input the address. This will draw a diagram visualizing tez flow in and out of address.
 
 To explore the particular connection, click anywhere on a green or red node. It will trigger a new search (or load the data from cache if already searched) with new address in connection (address and all related transactions are also copied into clipboard for quicker work with it elsewhere). Tool can remember searches and move back and forward between them. Searches can be shared via url.
 
