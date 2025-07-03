@@ -135,12 +135,16 @@
     #target-address {
       flex: 1;
       padding: 14px 20px;
-      border: 2px solid rgba(93, 95, 239, 0.2);
-      border-radius: 8px;
       font-family: Monda, Helvetica;
       font-size: 1rem;
-      background-color: white;
+	  font-weight: 400;
+    color: #ffffff75;
       transition: all 0.3s ease;
+    text-align: center;
+    border-radius: 16px;
+    border: none;
+    box-shadow: inset 0px 4px 20px #0c0624a8;
+    background: linear-gradient(0deg, rgba(24, 17, 44, 0.64) 0%, rgba(24, 17, 44, 0.64) 100%);
     }
 
     #target-address:focus {
@@ -155,25 +159,23 @@
     }
 
     .nav-button {
-          display: flex
-;
-    width: 44px;
-    height: 44px;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 16px 53px;
-    position: relative;
-    border-radius: 16px;
-    border: none;
-    box-shadow: inset 0px 4px 20px #0c0624a8;
-    background: linear-gradient(0deg, rgba(24, 17, 44, 0.64) 0%, rgba(24, 17, 44, 0.64) 100%);
+      background-color: var(--primary-color);
+      border: none;
+      border-radius: 8px;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(93, 95, 239, 0.2);
     }
-	
 
     .nav-button:hover {
+      background-color: var(--primary-dark);
       transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(127, 75, 231, 0.3);
+      box-shadow: 0 6px 16px rgba(93, 95, 239, 0.3);
     }
 
     .nav-button img {
@@ -195,7 +197,7 @@
     input[type="range"] {
       width: 100%;
       height: 6px;
-      background: linear-gradient(to right, var(--primary-color), var(--accent-color));
+      background: linear-gradient(180deg, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) 100%);
       border-radius: 3px;
       appearance: none;
       outline: none;
@@ -317,7 +319,7 @@
     /* Responsive design */
     @media (max-width: 768px) {
       #container {
-        padding: 20px 15px;
+        padding-top:100px;
       }
 
       #input-container {
@@ -382,10 +384,10 @@
       </a>
 	  <br>
       <h1>The Eye of Chad</h1>
-      <div class="button-container">
-        <button id="back-button" class="nav-button" alt="Back"><img src="icons/group-2.png" alt="Back"></button>
+            <div class="button-container">
+        <button id="back-button" class="nav-button" alt="Back"><img src="icons/back.png" alt="Back"></button>
         <input type="text" id="target-address" placeholder="Search or paste address">
-        <button id="forward-button" class="nav-button" alt="Forward"><img src="icons/group-3.png" alt="Forward"></button>
+        <button id="forward-button" class="nav-button" alt="Forward"><img src="icons/forward.png" alt="Forward"></button>
       </div>
             
       <div class="slider-container">
@@ -402,6 +404,6 @@
     <div id="sankey-diagram"></div>
     <div class="loader" id="loader"></div>
   </div>
-  <script src="js/main.js?x=13"></script>
+  <script src="js/main.js?x=14"></script>
 </body>
 </html>
