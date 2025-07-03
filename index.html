@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Eye of Chad</title>
+  <script src="js/plotly.min.js"></script>
+  <link rel="icon" type="image/png" href="icons/tezos.png" />
+  <meta name="description" content="The Eye of Chad is a web application that visualizes Tezos blockchain transaction flows">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="js/background.js?x=1"></script>
+  <style>
+    :root {
+      --primary-color: #5D5FEF;
+      --primary-dark: #4446BD;
+      --accent-color: #FF6B6B;
+      --dark-color: #151531;
+      --light-color: #F8F9FF;
+      --card-bg: #FFFFFF;
+      --text-primary: #1F1F3D;
+      --text-secondary: #6E6E8F;
+      --gradient-bg: linear-gradient(135deg, #5D5FEF 0%, #8082FF 100%);
+      --card-shadow: 0 10px 30px rgba(93, 95, 239, 0.08);
+      --hover-shadow: 0 15px 35px rgba(93, 95, 239, 0.15);
+      --border-radius: 16px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body, html {
+    height: 100%;
+	width:100%;
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+    overflow-x: hidden;
+}
+
+    #particle-canvas {
+  position:absolute;
+  width: 100%;
+  height: 100vh;
+}
+
+    #container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+    #input-container {
+	width:580px;
+	    max-width:580px;
+	    text-align:center;
+      background: var(--card-bg);
+      border-radius: var(--border-radius);
+      box-shadow: var(--card-shadow);
+      padding: 32px;
+      margin-bottom: 32px;
+      position: relative;
+      animation: fadeInDown 0.8s ease forwards;
+    }
+
+    .icon-link {
+      top: 32px;
+      right: 32px;
+      transition: transform 0.3s ease;
+    }
+
+    .icon-link:hover {
+      transform: scale(1.1);
+    }
+
+    .icon-link img {
+      width: 32px;
+      height: 32px;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      position: relative;
+      display: inline-block;
+    }
+
+    h1::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      left: 0;
+      width: 60px;
+      height: 3px;
+      background: var(--accent-color);
+      border-radius: 3px;
+    }
+
+    .button-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    #target-address {
+      flex: 1;
+      padding: 14px 20px;
+      border: 2px solid rgba(93, 95, 239, 0.2);
+      border-radius: 8px;
+      font-family: 'Inter', sans-serif;
+      font-size: 1rem;
+      color: var(--text-primary);
+      background-color: white;
+      transition: all 0.3s ease;
+    }
+
+    #target-address:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(93, 95, 239, 0.2);
+    }
+
+    #target-address::placeholder {
+      color: var(--text-secondary);
+      opacity: 0.7;
+    }
+
+    .nav-button {
+      background-color: var(--primary-color);
+      border: none;
+      border-radius: 8px;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(93, 95, 239, 0.2);
+    }
+
+    .nav-button:hover {
+      background-color: var(--primary-dark);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(93, 95, 239, 0.3);
+    }
+
+    .nav-button img {
+      width: 16px;
+      height: 16px;
+      filter: brightness(0) invert(1);
+    }
+
+    .slider-container {
+	    text-align:right;
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    .slider-container:last-child {
+      margin-bottom: 0;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      background: linear-gradient(to right, var(--primary-color), var(--accent-color));
+      border-radius: 3px;
+      appearance: none;
+      outline: none;
+      margin-bottom: 8px;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      background-color: white;
+      border: 2px solid var(--primary-color);
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 6px rgba(93, 95, 239, 0.3);
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    #limit-value, #limit-tez {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--primary-color);
+      display: inline-block;
+    }
+
+    .tooltip {
+    position: absolute;
+    top: 25px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #333;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    white-space: nowrap;
+    display: none;
+}
+
+.slider-container:hover .tooltip {
+    display: block;
+}
+
+    #sankey-diagram {
+	border-radius: 10px;
+	overflow:hidden;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 20px;
+    box-sizing: border-box;
+    display: none;
+}
+
+    .loader {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 50px;
+      height: 50px;
+      border: 3px solid rgba(93, 95, 239, 0.2);
+      border-top: 3px solid var(--primary-color);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      display: none;
+    }
+
+    #notification {
+      position: fixed;
+      bottom: -60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--dark-color);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      z-index: 100;
+      transition: bottom 0.3s ease;
+    }
+
+    #notification.show {
+      bottom: 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: translate(-50%, -50%) rotate(0deg); }
+      100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    @keyframes fadeInDown {
+      0% {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popUp {
+      0% {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+      #container {
+        padding: 20px 15px;
+      }
+
+      #input-container {
+        padding: 24px;
+        width: 90%;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      h1 {
+        font-size: 1.8rem;
+        margin-bottom: 20px;
+      }
+
+      .icon-link {
+        top: 24px;
+        right: 24px;
+      }
+
+      .icon-link img {
+        width: 24px;
+        height: 24px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      #input-container {
+        width: 100%;
+        padding: 20px 15px;
+      }
+      
+      h1 {
+        font-size: 1.5rem;
+      }
+
+      .button-container {
+        display: grid;
+        grid-template-columns: 44px 1fr 44px;
+        gap: 8px;
+      }
+
+      #target-address {
+        width: 100%;
+      }
+      
+      .slider-container {
+        text-align:right;
+      }
+      
+      .tooltip {
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="particle-canvas"></div>
+  <div id="notification">Address and transactions copied to clipboard/console</div>
+  <div id="container">
+    <div id="input-container">
+      <a href="https://github.com/xtzchads/eye.tez.cool" class="icon-link" target="_blank">
+        <img src="icons/Tezos-social-icon-black-04.png" alt="Tezos Icon" />
+      </a>
+	  <br>
+      <h1>The Eye of Chad</h1>
+      <div class="button-container">
+        <button id="back-button" class="nav-button" alt="Back"><img src="icons/back.png" alt="Back"></button>
+        <input type="text" id="target-address" placeholder="Search or paste address">
+        <button id="forward-button" class="nav-button" alt="Forward"><img src="icons/forward.png" alt="Forward"></button>
+      </div>
+            
+      <div class="slider-container">
+        <input type="range" id="result-limit" name="result-limit" min="1000" max="100000" step="1000" value="1000">
+        <span id="limit-value">1000 txes</span>
+        <span class="tooltip" id="result-limit-tooltip">Transaction search depth</span>
+      </div>
+      <div class="slider-container">
+        <input type="range" id="tez-limit" name="tez-limit" min="0" max="10000" step="10" value="0">
+        <span id="limit-tez">0 tez</span>
+        <span class="tooltip" id="tez-limit-tooltip">Display nodes with amounts greater than</span>
+      </div>
+    </div>
+    <div id="sankey-diagram"></div>
+    <div class="loader" id="loader"></div>
+  </div>
+  <script src="js/main.js?x=13"></script>
+</body>
+</html>
