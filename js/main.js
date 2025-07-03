@@ -714,10 +714,25 @@ function drawSankeyDiagram(targetAddress, inflows, outflows, addressToAliasMap, 
 
     Plotly.newPlot('sankey-diagram', [sankeyData], {
         margin: { t: 30, r: 10, b: 10, l: 10 },
-
+paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+	hoverlabel: {
+    bgcolor: "rgba(0, 0, 0, 0.8)",  // Dark background for tooltip
+    bordercolor: "white",
+    font: {
+      color: "white",
+      family: "Monda, Helvetica, sans-serif",
+      size: 12
+    }
+  },
+	font: {
+        color: 'white',
+        family: 'Monda,Helvetica'
+    },
         autosize: true,
         height: optimalHeight
-    }, { responsive: true, suppressWarnings: true });
+    }, { responsive: true, suppressWarnings: true,
+    displayModeBar: false});
 
     // Handle node click in the Sankey diagram
     const sankeyContainer = document.getElementById('sankey-diagram');
