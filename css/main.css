@@ -170,6 +170,7 @@ h1 {
     margin-top: 20px;
     box-sizing: border-box;
     display: none;
+	backdrop-filter: blur(2px);
 }
 
 #particle-canvas {
