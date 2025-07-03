@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <script src="js/background.js?x=1"></script>
   <style>
+  @import url("https://fonts.googleapis.com/css?family=Monda:400,500,600");
     :root {
       --primary-color: #5D5FEF;
       --primary-dark: #4446BD;
@@ -26,6 +26,21 @@
       --card-shadow: 0 10px 30px rgba(93, 95, 239, 0.08);
       --hover-shadow: 0 15px 35px rgba(93, 95, 239, 0.15);
       --border-radius: 16px;
+	  --colorful: rgba(239, 123, 227, 1);
+    --primary-gradient: linear-gradient(180deg, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) 100%);
+    --glass-bg: rgba(255, 255, 255, 0.01);
+    --glass-border: rgba(255, 255, 255, 0.26);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.7);
+    --text-muted: rgba(255, 255, 255, 0.5);
+    --shadow-glass: 11px 14px 39px rgba(5, 2, 13, 0.1), 45px 54px 70px rgba(5, 2, 13, 0.09), 100px 122px 95px rgba(5, 2, 13, 0.05);
+    --border-radius-sm: 16px;
+    --border-radius-md: 30px;
+    --spacing-xs: 8px;
+    --spacing-sm: 16px;
+    --spacing-md: 24px;
+    --spacing-lg: 32px;
+    --spacing-xl: 48px;
     }
 
     * {
@@ -38,23 +53,17 @@
     height: 100%;
 	width:100%;
     margin: 0;
-    font-family: Arial, sans-serif;
-    background-color: #f5f5f5;
+    font-family: Monda, Helvetica;
     overflow-x: hidden;
 }
 
-    #particle-canvas {
-  position:absolute;
-  width: 100%;
-  height: 100vh;
-}
 
     #container {
     position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 20px;
+	padding-top:100px;
     box-sizing: border-box;
 }
 
@@ -69,6 +78,15 @@
       margin-bottom: 32px;
       position: relative;
       animation: fadeInDown 0.8s ease forwards;
+	  background: var(--glass-bg);
+    border-radius: var(--border-radius-md);
+    border: 1px solid var(--glass-border);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+	backdrop-filter: blur(2px);
     }
 
     .icon-link {
@@ -117,13 +135,16 @@
     #target-address {
       flex: 1;
       padding: 14px 20px;
-      border: 2px solid rgba(93, 95, 239, 0.2);
-      border-radius: 8px;
-      font-family: 'Inter', sans-serif;
+      font-family: Monda, Helvetica;
       font-size: 1rem;
-      color: var(--text-primary);
-      background-color: white;
+	  font-weight: 400;
+    color: #ffffff75;
       transition: all 0.3s ease;
+    text-align: center;
+    border-radius: 16px;
+    border: none;
+    box-shadow: inset 0px 4px 20px #0c0624a8;
+    background: linear-gradient(0deg, rgba(24, 17, 44, 0.64) 0%, rgba(24, 17, 44, 0.64) 100%);
     }
 
     #target-address:focus {
@@ -176,7 +197,7 @@
     input[type="range"] {
       width: 100%;
       height: 6px;
-      background: linear-gradient(to right, var(--primary-color), var(--accent-color));
+      background: linear-gradient(180deg, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) 100%);
       border-radius: 3px;
       appearance: none;
       outline: none;
@@ -202,7 +223,7 @@
     #limit-value, #limit-tez {
       font-size: 0.875rem;
       font-weight: 500;
-      color: var(--primary-color);
+      color: var(--text-primary);
       display: inline-block;
     }
 
@@ -225,6 +246,7 @@
 }
 
     #sankey-diagram {
+	backdrop-filter: blur(2px);
 	border-radius: 10px;
 	overflow:hidden;
     width: 100%;
@@ -354,19 +376,16 @@
   </style>
 </head>
 <body>
-  <div id="particle-canvas"></div>
   <div id="notification">Address and transactions copied to clipboard/console</div>
   <div id="container">
     <div id="input-container">
       <a href="https://github.com/xtzchads/eye.tez.cool" class="icon-link" target="_blank">
-        <img src="icons/Tezos-social-icon-black-04.png" alt="Tezos Icon" />
+        <img src="icons/Tezos-social-icon-black-04.png" alt="Tezos Icon" style="filter: invert(1);" />
       </a>
 	  <br>
       <h1>The Eye of Chad</h1>
       <div class="button-container">
-        <button id="back-button" class="nav-button" alt="Back"><img src="icons/back.png" alt="Back"></button>
         <input type="text" id="target-address" placeholder="Search or paste address">
-        <button id="forward-button" class="nav-button" alt="Forward"><img src="icons/forward.png" alt="Forward"></button>
       </div>
             
       <div class="slider-container">
