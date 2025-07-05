@@ -419,10 +419,9 @@ input[type="range"] {
 	<script>
 function updateSlider(slider) {
   const percent = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
-  slider.style.background = `linear-gradient(to right, #a27cee 0%, #7f4be7 ${percent}%, rgba(24, 17, 44, 0.64) ${percent}%, rgba(24, 17, 44, 0.64) 100%)`;
+  slider.style.background = `linear-gradient(to right, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) ${percent}%, rgba(24, 17, 44, 0.64) ${percent}%, rgba(24, 17, 44, 0.64) 100%)`;
 }
 
-// Wait for DOM to load
 window.addEventListener('load', function() {
   const sliders = document.querySelectorAll('input[type="range"]');
   
