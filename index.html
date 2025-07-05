@@ -417,31 +417,17 @@ input[type="range"] {
   </div>
   <script src="js/main.js?x=14"></script>
 	<script>
-		function updateSliderBackground(slider) {
-  const value = slider.value;
-  const min = slider.min;
-  const max = slider.max;
-  const percentage = ((value - min) / (max - min)) * 100;
-  
-  const progressColor = 'linear-gradient(180deg, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) 100%)';
-  const trackColor = 'linear-gradient(0deg, rgba(24, 17, 44, 0.64) 0%, rgba(24, 17, 44, 0.64) 100%)';
-  
-  slider.style.background = `linear-gradient(to right, ${progressColor} 0%, ${progressColor} ${percentage}%, ${trackColor} ${percentage}%, ${trackColor} 100%)`;
+function updateSlider(slider) {
+  const percent = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
+  slider.style.background = `linear-gradient(to right, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) ${percent}%, rgba(24, 17, 44, 0.64) ${percent}%, rgba(24, 17, 44, 0.64) 100%)`;
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-  const resultLimit = document.getElementById('result-limit');
-  const tezLimit = document.getElementById('tez-limit');
+window.addEventListener('load', function() {
+  const sliders = document.querySelectorAll('input[type="range"]');
   
-  updateSliderBackground(resultLimit);
-  updateSliderBackground(tezLimit);
-  
-  resultLimit.addEventListener('input', function() {
-    updateSliderBackground(this);
-  });
-  
-  tezLimit.addEventListener('input', function() {
-    updateSliderBackground(this);
+  sliders.forEach(slider => {
+    updateSlider(slider);
+    slider.addEventListener('input', () => updateSlider(slider));
   });
 });
 	</script>
