@@ -55,7 +55,6 @@
     margin: 0;
     font-family: Monda, Helvetica;
     overflow-x: hidden;
-	    background: radial-gradient(50% 50% at 65% 50%, rgba(36, 26, 76, 1) 0%, rgba(9, 3, 28, 1) 100%);
 }
 
 
@@ -206,7 +205,6 @@ input[type="range"] {
   margin-bottom: 8px;
   box-shadow: inset 0px 4px 20px #0c0624a8;
 }
-
 
     input[type="range"]::-webkit-slider-thumb {
       appearance: none;
@@ -418,5 +416,34 @@ input[type="range"] {
     <div class="loader" id="loader"></div>
   </div>
   <script src="js/main.js?x=14"></script>
+	<script>
+		function updateSliderBackground(slider) {
+  const value = slider.value;
+  const min = slider.min;
+  const max = slider.max;
+  const percentage = ((value - min) / (max - min)) * 100;
+  
+  const progressColor = 'linear-gradient(180deg, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) 100%)';
+  const trackColor = 'linear-gradient(0deg, rgba(24, 17, 44, 0.64) 0%, rgba(24, 17, 44, 0.64) 100%)';
+  
+  slider.style.background = `linear-gradient(to right, ${progressColor} 0%, ${progressColor} ${percentage}%, ${trackColor} ${percentage}%, ${trackColor} 100%)`;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const resultLimit = document.getElementById('result-limit');
+  const tezLimit = document.getElementById('tez-limit');
+  
+  updateSliderBackground(resultLimit);
+  updateSliderBackground(tezLimit);
+  
+  resultLimit.addEventListener('input', function() {
+    updateSliderBackground(this);
+  });
+  
+  tezLimit.addEventListener('input', function() {
+    updateSliderBackground(this);
+  });
+});
+	</script>
 </body>
 </html>
