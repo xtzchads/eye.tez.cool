@@ -1,12 +1,9 @@
-// Element references
 const input = document.getElementById('target-address');
 const cache = new Map(); // Cache to store fetched data
 let offset = 0; // Offset for pagination
 let history = []; // History of visited addresses
 let historyIndex = -1; // Index in the history array
 
-/// Add CSS for the dropdown that matches the page style
-// Add CSS for the dropdown that matches the page style
 const style = document.createElement('style');
 style.textContent = `
     .address-dropdown {
@@ -838,4 +835,5 @@ function updateHistory(tezosAddress) {
 }
 
 updateNavigationButtons(); // Initial call to set the state of navigation buttons
+
 
