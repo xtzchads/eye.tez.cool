@@ -383,6 +383,23 @@ input[type="range"] {
         font-size: 12px;
       }
     }
+	  /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--primary-gradient);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(162, 124, 238, 0.8);
+    }
   </style>
 </head>
 <body>
@@ -432,3 +449,4 @@ window.addEventListener('load', function() {
 	</script>
 </body>
 </html>
+
