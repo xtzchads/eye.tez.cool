@@ -166,7 +166,7 @@ async function fetchAddressSuggestions(query) {
     try {
         showLoadingInDropdown();
         
-        const response = await fetch(`https://back.tzkt.io/v1/suggest/accounts/${query}`);
+        const response = await fetch(`https://staging.api.tzkt.io/v1/suggest/accounts/${query}`);
         if (!response.ok) {
             throw new Error('Network response was not ok');
         }
@@ -838,3 +838,4 @@ function updateHistory(tezosAddress) {
 }
 
 updateNavigationButtons(); // Initial call to set the state of navigation buttons
+
