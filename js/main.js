@@ -729,7 +729,7 @@ paper_bgcolor: 'rgba(0,0,0,0)',
         autosize: true,
         height: optimalHeight
     }, { responsive: true, suppressWarnings: true,
-    displayModeBar: true, modeBarButtonsToRemove: ['resetViews','pan2d','select2d','lasso2d','resetScale2d','zoomOut2d']});
+    displayModeBar: true, displaylogo: false, modeBarButtonsToRemove: ['resetViewMapbox','resetViews','pan2d','select2d','lasso2d','resetScale2d','zoomOut2d']});
 
     // Handle node click in the Sankey diagram
     const sankeyContainer = document.getElementById('sankey-diagram');
@@ -835,6 +835,7 @@ function updateHistory(tezosAddress) {
 }
 
 updateNavigationButtons(); // Initial call to set the state of navigation buttons
+
 
 
 
