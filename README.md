@@ -1,45 +1,80 @@
-# The Eye of Chad
+# The Eye of Chad — Interactive Tezos On-Chain Flow Explorer
 
-The Eye of Chad is a small web application that visualizes Tezos blockchain transaction flows with non-zero amounts of tez.
+**The Eye of Chad** is a fast, zero-dependency, client-side web application that visualizes Tezos (`XTZ`) blockchain value flows using a custom high-readability interactive SVG Sankey diagram.
 
-## How to use
-There are two sliders - transaction depth slider and a dust filter slider (for the case when there are too many dust inputs or outputs)
-To start, set the parameters (default are 1000 tx depth and no filtering by amount), input the address. This will draw a diagram visualizing tez flow in and out of address.
+Built with pure **HTML + CSS + Vanilla JavaScript**, it runs 100% in the browser using the public [TzKT API](https://api.tzkt.io/) and can be deployed directly to **GitHub Pages** or any static file host with zero build steps.
 
-To explore the particular connection, click anywhere on a green or red node. It will trigger a new search (or load the data from cache if already searched) with new address in connection (address and all related transactions are also copied into clipboard for quicker work with it elsewhere). Tool can remember searches and move back and forward between them. Searches can be shared via url.
+---
 
-## Features
- - No need of backend, purely clientside app using TZKT API (awesome, isn't it?)
- - Visualization of tez flows using sankey diagrams (inflows, outflows, dates, tx count, inputs/outputs count on mouse hover).
- - Caching of searches inside of single session so you don't need to wait for a data load when you visit same connection multiple times
- - Back/forward navigation between searches inside of single session so you won't lose your previous/current searches
- - Automatic copying of all necessary data to clipboard once you click a connection (address, transactions in descending order from most fresh ones as tzkt links)
- - URL sharing (share your searches with friends just by giving them url of your search)
- - Save your searches as PNG using Plotly built-in functionality
- - Mobile friendly, but best to use on big screens due potentially large amounts of data
- - Super easy to deploy. Just fork the repo and publish it as your own Github Pages site
+## How to Use
+
+1. **Search an Address or Alias**:
+   - Paste any Tezos wallet or smart contract address (`tz1`, `tz2`, `tz3`, `KT1`) into the top search bar, or type a known account name (e.g., `objkt`, `Burn`, bakers, exchanges) to pick from the live TzKT autocomplete dropdown with account avatars.
+   - Or click one of the **Try** preset chips (`Burn`, `objkt.com`) in the top-right header.
+2. **Adjust Analysis Scope & Dust Filtering**:
+   - **Depth (`1,000` – `100,000` txes, default `10,000`)**: Controls how many of the latest applied non-zero XTZ transfers are fetched and analyzed.
+   - **Min Flow (`0 ꜩ` – `10,000 ꜩ`) & Quick Dust Chips (`0`, `≥10`, `≥100`, `≥1K`)**: Instantly filters out low-volume counterparties in memory without re-fetching from the network.
+3. **Explore & Pivot Through the Flow Graph**:
+   - **Left Column (`Inflows / Senders`)**: Accounts that sent XTZ to the target hub.
+   - **Center Card (`Target Hub`)**: The analyzed account, displaying its TzKT avatar, alias/address, total inflows, and total outflows.
+   - **Right Column (`Outflows / Receivers`)**: Accounts that received XTZ from the target hub.
+   - **Click any counterparty node or ribbon**: Automatically copies the counterparty's address and all related `tzkt.io/{opHash}` transaction links to your clipboard (and prints them to the browser console), then **pivots** the explorer into that counterparty's flow graph.
+   - **Click the `⋯` button (or right-click any node/ribbon)**: Opens the slide-over **Transaction Inspector Drawer** to browse individual operation links, copy data, or open the account on TzKT without leaving the current graph.
+   - **Back / Forward buttons**: Navigate seamlessly through your session's exploration history.
+
+---
+
+## Key Features
+
+- **Zero-Dependency Custom SVG Sankey Engine**:
+  - Replaces legacy charting libraries with a purpose-built 3-column SVG layout featuring guaranteed non-overlapping node cards, full-bleed readable labels, volume share bars, and animated flow highlights on hover.
+- **Circular Flows (`↺`) & Self-Transfer Loops**:
+  - **Circular (`↺`, default)**: Automatically detects bidirectional counterparties (senders that also received return funds from the Hub) and loops their return outflows smoothly back to the left sender card, plus renders a dedicated **Crown Loop (`↺ Self`)** above the Hub when an account transfers XTZ to itself (`0 ꜩ` net flow impact).
+  - **Split (`⇄`)**: Standard 3-column Sankey view with inflows on the left and all outflows on the right.
+- **Readability & Scaling Controls**:
+  - **Scale (`√ Bal` / `Log` / `Linear`)**: Square-root (`√`) balanced scaling prevents massive whale transfers from crushing smaller counterparties into unreadable 1px lines.
+  - **Smart Top-N Grouping (`25` / `50` / `100` / `All`)**: Groups long-tail counterparties into an interactive `+ N smaller senders/receivers` node (click it to expand).
+  - **Sort (`Vol` / `Tx` / `New`)**: Order counterparties by total XTZ volume, transaction count, or most recent activity.
+  - **Live Node Filter**: Instant `requestAnimationFrame`-throttled text search across visible counterparty aliases and addresses.
+- **High-Throughput TzKT API Integration & Smart Caching**:
+  - Streams non-zero transfers via `GET /v1/operations/transactions` (`amount.gt=0`, up to `10,000` operations per batch with field projection `select=id,hash,timestamp,amount,sender,target` and cursor pagination `offset.cr`), plus parallel support for genesis `activation`, `migration` (`~Bootstrap~` / `~Subsidy~`), and funded contract `origination` flows.
+  - Smart in-memory session cache reuses previously fetched batches when revisiting addresses or adjusting filters.
+- **URL Hash State Sharing**:
+  - Every search encodes `#address,depthLimit,minTezLimit` in the URL hash so exact views can be bookmarked or shared via link.
+- **High-Resolution PNG Export**:
+  - Download a crisp `2×` retina PNG snapshot of the current Sankey diagram with one click (`PNG` button).
+
+---
 
 ## Directory Structure
 
-- `index.html` : Main HTML file
-- `css/main.css` : Main CSS file
-- `js/main.js` : Main JS file
-- `js/background.js` : Animated background
-- `js/plotly.min.js` : Plotly charting library
-- `icons/` : Directory containing the icon images
+```text
+.
+├── index.html      # Main application entry point (Compact Unified Header + Workspace)
+├── frame.html      # Embeddable iframe-ready entry point
+├── css/
+│   └── main.css    # Dark-mode glassmorphism theme, compact toolbar, & SVG Sankey styles
+├── js/
+│   └── main.js     # TzKT API client, transaction parser, custom SVG Sankey engine, & UI logic
+├── icons/          # Application & social icons
+└── README.md       # Project documentation
+```
 
-## Questions & Answers
-How to copy address/transactions?
-- Just click on connection area. Address and all transactions will get copied into clipboard and also printed into browser console automatically
+---
 
-Can I select text in chart area?
-- No, it's a limitation of charting library. However we tried to build it in the way that you don't have to. Click on connection copies all needed info and you can instantly return back via Back button
+## FAQ
 
-What tx range slider does?
-- It's a transaction depth. If you choose 10000, latest 10000 transactions will be analyzed.
+**How do I copy an address and its transactions?**
+- Click any node card or flow ribbon. The counterparty address and all associated `https://tzkt.io/{hash}` links are automatically copied to your clipboard and logged to the browser console. You can also click the `⋯` icon on any node (or right-click it) to inspect and copy individual transactions in the side drawer.
 
-What tez slider does?
-- It hides the connections with amount less than specified with slider. Useful to filter dust connections and free some chart space or targeting specific ammounts of tez flows
+**How are self-transfers (`Hub → Hub`) handled?**
+- When an account sends XTZ to itself, it is rendered as a top crown loop (`↺ Self`) on the Target Hub and noted in the **Analyzed Scope** summary card, while **Total Inflows**, **Total Outflows**, and **Net Flow** exclude self-transfers (`0 ꜩ` net impact).
+
+**How do I deploy this to GitHub Pages?**
+- Fork or push this repository to GitHub, go to **Settings → Pages**, and select your branch root (`/`). No bundler or build step is required.
+
+---
 
 ## License
-This project is open-source and available under the MIT License.
+
+This project is open-source and available under the [MIT License](LICENSE).
