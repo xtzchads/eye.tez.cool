@@ -1062,13 +1062,13 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   }
 
   // Geometry constants
-  const containerWidth = Math.max(1020, container.clientWidth || 1280);
+  const containerWidth = Math.max(1080, container.clientWidth || 1280);
   const W = containerWidth;
   const padX = 24;
   const circularCount = mergedCircularAddresses.size;
   const padYTop = circularCount > 0 ? Math.min(145, 68 + circularCount * 12) : 28;
   const padYBottom = circularCount > 0 ? Math.min(130, 56 + circularCount * 12) : 28;
-  const cardW = Math.min(310, Math.max(245, Math.floor(W * 0.24)));
+  const cardW = Math.min(315, Math.max(295, Math.floor(W * 0.275)));
   const hubW = 214;
 
   const minCardH = 44;
@@ -1465,12 +1465,16 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       : `${n.alias ? shortenAddress(n.realAddress) + ' • ' : ''}${n.count} tx${n.count > 1 ? 'es' : ''}`;
 
     const amountStr = formatTez(n.amount, true);
+    const returnAmountStr = n.hasCircularReturn ? `↺ -${formatTez(n.returnAmount, true)}` : '';
     const pctStr = `${n.sharePct >= 10 ? n.sharePct.toFixed(1) : n.sharePct.toFixed(2)}%`;
 
     const portBarX = isLeft ? n.x + n.w - 5 : n.x;
     const inspectBtnX = isLeft ? n.x + 8 : n.x + n.w - 28;
     const textLeftX = isLeft ? n.x + 34 : n.x + 14;
     const amountRightX = isLeft ? n.x + n.w - 12 : n.x + n.w - 34;
+
+    const subFontSize =
+      n.hasCircularReturn && subTitle.length + returnAmountStr.length > 36 ? '9.1' : '10.2';
 
     const midY = n.y + n.h / 2;
 
@@ -1486,8 +1490,8 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         <text x="${amountRightX}" y="${midY - 6}" text-anchor="end" fill="#10b981" font-family="JetBrains Mono, monospace" font-size="11.5" font-weight="700">
           +${escapeHtml(amountStr)}
         </text>
-        <text x="${amountRightX}" y="${midY + 11}" text-anchor="end" fill="#f472b6" font-family="JetBrains Mono, monospace" font-size="10.8" font-weight="600">
-          ↺ -${escapeHtml(formatTez(n.returnAmount, true))}
+        <text x="${amountRightX}" y="${midY + 11}" text-anchor="end" fill="#f472b6" font-family="JetBrains Mono, monospace" font-size="10.2" font-weight="600">
+          ${escapeHtml(returnAmountStr)}
         </text>
       `
       : `
@@ -1538,7 +1542,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         </text>
 
         <!-- Secondary Meta (Address & Tx Count) -->
-        <text x="${textLeftX}" y="${midY + 12}" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="10.2">
+        <text x="${textLeftX}" y="${midY + 12}" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="${subFontSize}">
           ${escapeHtml(subTitle)}
         </text>
 
@@ -1986,6 +1990,7 @@ function bindSankeyInteractions(
 
   // Single Delegated Event Listeners on SVG (replaces 10 * N per-element listeners)
   svgEl.addEventListener('mouseover', (evt) => {
+    const inspectBtn = evt.target.closest('.node-inspect-btn');
     const itemEl = evt.target.closest('.sankey-node-group, .sankey-link-wrap, #sankey-center-hub');
     if (!itemEl) {
       if (currentHoverKey !== null) clearHighlight();
@@ -2004,10 +2009,25 @@ function bindSankeyInteractions(
     const side = itemEl.dataset.side;
     const idx = Number(itemEl.dataset.index);
     const hoverKey = `${side}:${idx}`;
-    if (currentHoverKey === hoverKey) return;
+    const entry = getEntry(side, idx);
+
+    if (inspectBtn) {
+      if (currentHoverKey !== hoverKey && entry) {
+        currentHoverKey = hoverKey;
+        highlightConnection(entry.realAddress, side, idx);
+      }
+      if (tooltip) tooltip.style.display = 'none';
+      return;
+    }
+
+    if (currentHoverKey === hoverKey) {
+      if (entry && tooltip && tooltip.style.display === 'none') {
+        showNodeTooltip(evt, entry, side);
+      }
+      return;
+    }
 
     currentHoverKey = hoverKey;
-    const entry = getEntry(side, idx);
     if (entry) {
       highlightConnection(entry.realAddress, side, idx);
       showNodeTooltip(evt, entry, side);
@@ -2026,6 +2046,7 @@ function bindSankeyInteractions(
     const inspectBtn = evt.target.closest('.node-inspect-btn');
     if (inspectBtn) {
       evt.stopPropagation();
+      clearHighlight();
       const side = inspectBtn.dataset.side;
       const idx = Number(inspectBtn.dataset.index);
       openInspectorDrawer(getEntry(side, idx), side);
@@ -2055,6 +2076,7 @@ function bindSankeyInteractions(
     const entry = getEntry(side, idx);
     if (entry && !entry.isAggregate) {
       evt.preventDefault();
+      clearHighlight();
       openInspectorDrawer(entry, side);
     }
   });
@@ -2069,6 +2091,8 @@ let inspectedEntry = null;
 
 function openInspectorDrawer(entry, side) {
   if (!inspectorDrawer || !entry) return;
+  const tooltipEl = document.getElementById('sankey-tooltip');
+  if (tooltipEl) tooltipEl.style.display = 'none';
   inspectedEntry = entry;
 
   document.getElementById('drawer-alias').textContent = entry.alias || shortenAddress(entry.realAddress);
@@ -2125,6 +2149,23 @@ function openInspectorDrawer(entry, side) {
 
 document.getElementById('drawer-close-btn')?.addEventListener('click', () => {
   inspectorDrawer?.classList.remove('open');
+});
+
+document.addEventListener('click', (evt) => {
+  if (!inspectorDrawer || !inspectorDrawer.classList.contains('open')) return;
+  if (
+    !inspectorDrawer.contains(evt.target) &&
+    !evt.target.closest('.node-inspect-btn') &&
+    !evt.target.closest('#sankey-self-loop')
+  ) {
+    inspectorDrawer.classList.remove('open');
+  }
+});
+
+document.addEventListener('keydown', (evt) => {
+  if (evt.key === 'Escape' && inspectorDrawer?.classList.contains('open')) {
+    inspectorDrawer.classList.remove('open');
+  }
 });
 
 document.getElementById('drawer-pivot-btn')?.addEventListener('click', () => {
