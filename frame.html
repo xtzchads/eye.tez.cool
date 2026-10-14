@@ -3,450 +3,278 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>The Eye of Chad</title>
-  <script src="js/plotly.min.js"></script>
+  <title>The Eye of Chad — Tezos Flow Visualizer</title>
   <link rel="icon" type="image/png" href="icons/tezos.png" />
-  <meta name="description" content="The Eye of Chad is a web application that visualizes Tezos blockchain transaction flows">
+  <meta name="description" content="The Eye of Chad is a modern web application that visualizes Tezos blockchain transaction flows using high-readability interactive Sankey diagrams.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-  @import url("https://fonts.googleapis.com/css?family=Monda:400,500,600");
-    :root {
-      --primary-color: #5D5FEF;
-      --primary-dark: #4446BD;
-      --accent-color: #FF6B6B;
-      --dark-color: #151531;
-      --light-color: #F8F9FF;
-      --card-bg: #FFFFFF;
-      --text-primary: #1F1F3D;
-      --text-secondary: #6E6E8F;
-      --gradient-bg: linear-gradient(135deg, #5D5FEF 0%, #8082FF 100%);
-      --card-shadow: 0 10px 30px rgba(93, 95, 239, 0.08);
-      --hover-shadow: 0 15px 35px rgba(93, 95, 239, 0.15);
-      --border-radius: 16px;
-	  --colorful: rgba(239, 123, 227, 1);
-    --primary-gradient: linear-gradient(180deg, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) 100%);
-    --glass-bg: rgba(255, 255, 255, 0.01);
-    --glass-border: rgba(255, 255, 255, 0.26);
-    --text-primary: #ffffff;
-    --text-secondary: rgba(255, 255, 255, 0.7);
-    --text-muted: rgba(255, 255, 255, 0.5);
-    --shadow-glass: 11px 14px 39px rgba(5, 2, 13, 0.1), 45px 54px 70px rgba(5, 2, 13, 0.09), 100px 122px 95px rgba(5, 2, 13, 0.05);
-    --border-radius-sm: 16px;
-    --border-radius-md: 30px;
-    --spacing-xs: 8px;
-    --spacing-sm: 16px;
-    --spacing-md: 24px;
-    --spacing-lg: 32px;
-    --spacing-xl: 48px;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body, html {
-    height: 100%;
-	width:100%;
-    margin: 0;
-    font-family: Monda, Helvetica;
-    overflow-x: hidden;
-}
-
-
-    #container {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-	padding-top:100px;
-    box-sizing: border-box;
-}
-
-    #input-container {
-	width:580px;
-	    max-width:580px;
-	    text-align:center;
-      background: var(--card-bg);
-      border-radius: var(--border-radius);
-      box-shadow: var(--card-shadow);
-      padding: 32px;
-      margin-bottom: 32px;
-      position: relative;
-      animation: fadeInDown 0.8s ease forwards;
-	  background: var(--glass-bg);
-    border-radius: var(--border-radius-md);
-    border: 1px solid var(--glass-border);
-    padding: var(--spacing-md);
-    margin-bottom: var(--spacing-md);
-    align-items: center;
-    justify-content: center;
-    color: var(--text-secondary);
-	backdrop-filter: blur(2px);
-    }
-
-    .icon-link {
-      top: 32px;
-      right: 32px;
-      transition: transform 0.3s ease;
-    }
-
-    .icon-link:hover {
-      transform: scale(1.1);
-    }
-
-    .icon-link img {
-      width: 32px;
-      height: 32px;
-    }
-
-    h1 {
-      font-size: 2.5rem;
-      font-weight: 700;
-      margin-bottom: 24px;
-      color: var(--text-primary);
-      letter-spacing: -0.02em;
-      position: relative;
-      display: inline-block;
-    }
-
-    h1::after {
-      content: '';
-      position: absolute;
-      bottom: -5px;
-      left: 0;
-      width: 60px;
-      height: 3px;
-      background: var(--accent-color);
-      border-radius: 3px;
-    }
-
-    .button-container {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 24px;
-    }
-
-    #target-address {
-      flex: 1;
-      padding: 14px 20px;
-      font-family: Monda, Helvetica;
-      font-size: 1rem;
-	  font-weight: 400;
-    color: #ffffff75;
-      transition: all 0.3s ease;
-    text-align: center;
-    border-radius: 16px;
-    border: none;
-    box-shadow: inset 0px 4px 20px #0c0624a8;
-    background: linear-gradient(0deg, rgba(24, 17, 44, 0.64) 0%, rgba(24, 17, 44, 0.64) 100%);
-    }
-
-    #target-address:focus {
-      outline: none;
-      border-color: var(--primary-color);
-      box-shadow: 0 0 0 3px rgba(93, 95, 239, 0.2);
-    }
-
-    #target-address::placeholder {
-      color: var(--text-secondary);
-      opacity: 0.7;
-    }
-
-    .nav-button {
-          display: flex;
-    width: 44px;
-    height: 44px;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 27px 16px;
-    position: relative;
-    border-radius: 16px;
-    border: none;
-    box-shadow: inset 0px 4px 20px #0c0624a8;
-    background: linear-gradient(0deg, rgba(24, 17, 44, 0.64) 0%, rgba(24, 17, 44, 0.64) 100%);
-    }
-	
-
-    .nav-button:hover {
-      transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(127, 75, 231, 0.3);
-    }
-
-    .nav-button img {
-      width: 16px;
-      height: 16px;
-      filter: brightness(0) invert(1);
-    }
-
-    .slider-container {
-	    text-align:right;
-      margin-bottom: 20px;
-      position: relative;
-    }
-
-    .slider-container:last-child {
-      margin-bottom: 0;
-    }
-
-input[type="range"] {
-  width: 100%;
-  height: 6px;
-  background: linear-gradient(0deg, rgba(24, 17, 44, 0.64) 0%, rgba(24, 17, 44, 0.64) 100%);
-  border-radius: 3px;
-  appearance: none;
-  outline: none;
-  margin-bottom: 8px;
-}
-
-    input[type="range"]::-webkit-slider-thumb {
-      appearance: none;
-      width: 18px;
-      height: 18px;
-      background-color: white;
-      border: 2px solid var(--primary-color);
-      border-radius: 50%;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 6px rgba(93, 95, 239, 0.3);
-    }
-
-    input[type="range"]::-webkit-slider-thumb:hover {
-      transform: scale(1.2);
-    }
-
-    #limit-value, #limit-tez {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--text-primary);
-      display: inline-block;
-    }
-
-    .tooltip {
-    position: absolute;
-    top: 25px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #333;
-    color: #fff;
-    padding: 5px 10px;
-    border-radius: 4px;
-    font-size: 14px;
-    white-space: nowrap;
-    display: none;
-}
-
-.slider-container:hover .tooltip {
-    display: block;
-}
-
-    #sankey-diagram {
-	backdrop-filter: blur(2px);
-	border-radius: 10px;
-	overflow:hidden;
-    width: 100%;
-    max-width: 100%;
-    margin-top: 20px;
-	    margin-bottom:20px;
-    box-sizing: border-box;
-    display: none;
-    border-radius: var(--border-radius);
-    box-shadow: var(--card-shadow);
-    animation: fadeInDown 0.8s ease forwards;
-    border-radius: var(--border-radius-md);
-    border: 1px solid var(--glass-border);
-    backdrop-filter: blur(2px);
-}
-
-    .loader {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 50px;
-      height: 50px;
-      border: 3px solid rgba(93, 95, 239, 0.2);
-      border-top: 3px solid var(--primary-color);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      display: none;
-    }
-
-    #notification {
-      position: fixed;
-      bottom: -60px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--dark-color);
-      color: white;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 0.875rem;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      z-index: 100;
-      transition: bottom 0.3s ease;
-    }
-
-    #notification.show {
-      bottom: 20px;
-    }
-
-    @keyframes spin {
-      0% { transform: translate(-50%, -50%) rotate(0deg); }
-      100% { transform: translate(-50%, -50%) rotate(360deg); }
-    }
-
-    @keyframes fadeInDown {
-      0% {
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-      100% {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popUp {
-      0% {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      100% {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    /* Responsive design */
-    @media (max-width: 768px) {
-      #container {
-        padding-top:130px;
-      }
-
-      #input-container {
-        padding: 24px;
-        width: 90%;
-        margin-left: auto;
-        margin-right: auto;
-      }
-
-      h1 {
-        font-size: 1.8rem;
-        margin-bottom: 20px;
-      }
-
-      .icon-link {
-        top: 24px;
-        right: 24px;
-      }
-
-      .icon-link img {
-        width: 24px;
-        height: 24px;
-      }
-    }
-
-    @media (max-width: 480px) {
-      #input-container {
-        width: 100%;
-        padding: 20px 15px;
-      }
-      #container {
-        padding-top:170px;
-      }
-      h1 {
-        font-size: 1.5rem;
-      }
-
-      .button-container {
-        display: grid;
-        grid-template-columns: 44px 1fr 44px;
-        gap: 8px;
-      }
-
-      #target-address {
-        width: 100%;
-      }
-      
-      .slider-container {
-        text-align:right;
-      }
-      
-      .tooltip {
-        font-size: 12px;
-      }
-    }
-	  /* Custom Scrollbar */
-    ::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: var(--primary-gradient);
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(162, 124, 238, 0.8);
-    }
-  </style>
+  <link rel="stylesheet" href="css/main.css">
 </head>
-<body>
-  <div id="notification">Address and transactions copied to clipboard/console</div>
+<body class="frame-mode">
+  <div id="ambient-bg"></div>
+
+  <div id="notification">
+    <i class="fa-solid fa-circle-check"></i>
+    <span id="notification-text">Address and transactions copied to clipboard/console</span>
+  </div>
+
   <div id="container">
-    <div id="input-container">
-      <a href="https://github.com/xtzchads/eye.tez.cool" class="icon-link" target="_blank">
-        <img src="icons/Tezos-social-icon-black-04.png" alt="Tezos Icon" style="filter: invert(1);" />
-      </a>
-	  <br>
-      <h1>The Eye of Chad</h1>
-      <div class="button-container">
-        <button id="back-button" class="nav-button" alt="Back"><img src="icons/group-2.png" alt="Back"></button>
-        <input type="text" id="target-address" placeholder="Search or paste address">
-        <button id="forward-button" class="nav-button" alt="Forward"><img src="icons/group-3.png" alt="Forward"></button>
+    <!-- Unified Sankey Workspace with Compact Block Header -->
+    <div id="sankey-workspace">
+      <div class="diagram-toolbar" id="input-container">
+        <!-- Row 1: Brand + Search/Navigation Bar + Sample Presets + GitHub Link -->
+        <div class="toolbar-row toolbar-top-row">
+          <div class="brand-group">
+            <div class="brand-eye-logo">
+              <img src="icons/tezos.png" alt="Tezos Logo" />
+            </div>
+            <div class="brand-titles">
+              <h1>The Eye of Chad</h1>
+              <div class="brand-subtitle">Interactive Tezos On-Chain Flow Explorer</div>
+            </div>
+          </div>
+
+          <div class="button-container">
+            <button id="back-button" class="nav-button" title="Previous address (Back)">
+              <img src="icons/group-2.png" alt="Back">
+            </button>
+
+            <div class="search-input-wrapper">
+              <input type="text" id="target-address" placeholder="Search alias or paste tz1 / tz2 / tz3 / KT1 address..." autocomplete="off" spellcheck="false">
+              <i class="fa-solid fa-magnifying-glass search-icon"></i>
+              <button id="search-button" class="search-submit-btn" title="Analyze flows">
+                <i class="fa-solid fa-bolt"></i>
+                <span>Analyze</span>
+              </button>
+            </div>
+
+            <button id="forward-button" class="nav-button" title="Next address (Forward)">
+              <img src="icons/group-3.png" alt="Forward">
+            </button>
+          </div>
+
+          <div class="header-actions">
+            <div class="quick-examples" id="quick-examples">
+              <span class="quick-label">Try:</span>
+              <button type="button" class="preset-chip sample-addr-btn" data-address="tz1burnburnburnburnburnburnburjAYjjX" data-alias="Null / Burn Address">
+                <i class="fa-solid fa-fire"></i> Burn
+              </button>
+              <button type="button" class="preset-chip sample-addr-btn" data-address="KT1HbQepzV1nVGg8QVznG7z4RcHseD5kwqBn" data-alias="objkt.com Marketplace">
+                <i class="fa-solid fa-gem"></i> objkt.com
+              </button>
+            </div>
+
+            <a href="https://github.com/xtzchads/eye.tez.cool" class="icon-link" target="_blank" rel="noopener">
+              <img src="icons/Tezos-social-icon-black-04.png" alt="GitHub" />
+              <span>GitHub</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Row 2: Compact Sliders & Quick Dust Filter + Diagram Readability Controls -->
+        <div class="toolbar-row toolbar-controls-row">
+          <div class="toolbar-group">
+            <div class="slider-container compact-slider">
+              <span class="slider-label"><i class="fa-solid fa-layer-group"></i> Depth</span>
+              <input type="range" id="result-limit" name="result-limit" min="1000" max="100000" step="1000" value="10000">
+              <span id="limit-value">10,000 txes</span>
+              <span class="tooltip" id="result-limit-tooltip">Number of latest operations to analyze</span>
+            </div>
+
+            <div class="slider-container compact-slider">
+              <span class="slider-label"><i class="fa-solid fa-filter"></i> Min Flow</span>
+              <input type="range" id="tez-limit" name="tez-limit" min="0" max="10000" step="10" value="0">
+              <span id="limit-tez">0 ꜩ</span>
+              <span class="tooltip" id="tez-limit-tooltip">Hide counterparties with total volume below this amount</span>
+              <div class="quick-examples compact-dust" id="dust-presets">
+                <button type="button" class="preset-chip dust-chip active" data-tez="0" title="Show all flows">0</button>
+                <button type="button" class="preset-chip dust-chip" data-tez="10" title="Min 10 ꜩ">&ge;10</button>
+                <button type="button" class="preset-chip dust-chip" data-tez="100" title="Min 100 ꜩ">&ge;100</button>
+                <button type="button" class="preset-chip dust-chip" data-tez="1000" title="Min 1,000 ꜩ">&ge;1K</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="toolbar-group">
+            <div class="toolbar-item">
+              <span class="toolbar-label">Scale</span>
+              <div class="segmented-control" id="scale-mode-control">
+                <button type="button" class="seg-btn active" data-scale="sqrt" title="Square-root scaling prevents massive whale flows from crushing smaller nodes">&radic; Bal</button>
+                <button type="button" class="seg-btn" data-scale="log" title="Logarithmic scaling for extreme volume differences">Log</button>
+                <button type="button" class="seg-btn" data-scale="linear" title="Strict proportional linear scaling">Linear</button>
+              </div>
+            </div>
+
+            <div class="toolbar-item">
+              <span class="toolbar-label">Nodes</span>
+              <div class="segmented-control" id="max-nodes-control">
+                <button type="button" class="seg-btn" data-max="25">25</button>
+                <button type="button" class="seg-btn active" data-max="50">50</button>
+                <button type="button" class="seg-btn" data-max="100">100</button>
+                <button type="button" class="seg-btn" data-max="9999">All</button>
+              </div>
+            </div>
+
+            <div class="toolbar-item">
+              <span class="toolbar-label">Sort</span>
+              <div class="segmented-control" id="sort-mode-control">
+                <button type="button" class="seg-btn active" data-sort="amount">Vol</button>
+                <button type="button" class="seg-btn" data-sort="count">Tx</button>
+                <button type="button" class="seg-btn" data-sort="recent">New</button>
+              </div>
+            </div>
+
+            <div class="toolbar-item">
+              <span class="toolbar-label">Flows</span>
+              <div class="segmented-control" id="circular-mode-control">
+                <button type="button" class="seg-btn" data-circular="off" title="Standard 3-column Sankey: inflows on left, outflows on right">Split &#8644;</button>
+                <button type="button" class="seg-btn active" data-circular="on" title="Circular flows: loop return outflows from the Hub back to the sender node">Circular &#8634;</button>
+              </div>
+            </div>
+
+            <div class="filter-box-wrap">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="node-search" class="node-filter-input" placeholder="Filter nodes...">
+            </div>
+
+            <button type="button" id="export-png-btn" class="action-btn" title="Download high-resolution PNG of the Sankey diagram">
+              <i class="fa-solid fa-camera"></i>
+              <span>PNG</span>
+            </button>
+          </div>
+        </div>
       </div>
-            
-      <div class="slider-container">
-        <input type="range" id="result-limit" name="result-limit" min="1000" max="100000" step="1000" value="1000">
-        <span id="limit-value">1000 txes</span>
-        <span class="tooltip" id="result-limit-tooltip">Transaction search depth</span>
+
+      <!-- Compact KPI Summary Strip -->
+      <div id="stats-strip">
+        <div class="stat-card inflow">
+          <div class="stat-title">
+            <span>Total Inflows</span>
+            <i class="fa-solid fa-arrow-trend-down"></i>
+          </div>
+          <div class="stat-value" id="stat-inflow-val">0 ꜩ</div>
+          <div class="stat-meta" id="stat-inflow-meta">0 senders</div>
+        </div>
+
+        <div class="stat-card outflow">
+          <div class="stat-title">
+            <span>Total Outflows</span>
+            <i class="fa-solid fa-arrow-trend-up"></i>
+          </div>
+          <div class="stat-value" id="stat-outflow-val">0 ꜩ</div>
+          <div class="stat-meta" id="stat-outflow-meta">0 receivers</div>
+        </div>
+
+        <div class="stat-card net">
+          <div class="stat-title">
+            <span>Net Flow (Sampled)</span>
+            <i class="fa-solid fa-scale-balanced"></i>
+          </div>
+          <div class="stat-value" id="stat-net-val">0 ꜩ</div>
+          <div class="stat-meta" id="stat-net-meta">Current balance: —</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-title">
+            <span>Analyzed Scope</span>
+            <i class="fa-solid fa-bolt"></i>
+          </div>
+          <div class="stat-value" id="stat-scope-val">0 ops</div>
+          <div class="stat-meta" id="stat-scope-meta">Click any node to pivot</div>
+        </div>
       </div>
-      <div class="slider-container">
-        <input type="range" id="tez-limit" name="tez-limit" min="0" max="10000" step="10" value="0">
-        <span id="limit-tez">0 tez</span>
-        <span class="tooltip" id="tez-limit-tooltip">Display nodes with amounts greater than</span>
+
+      <!-- Loading Indicator -->
+      <div class="loader-wrapper" id="loader">
+        <div class="loader"></div>
+        <div class="loader-text" id="loader-status">Fetching operations from TzKT...</div>
+      </div>
+
+      <!-- Initial Welcome / Empty State -->
+      <div id="empty-state">
+        <div class="empty-icon">
+          <i class="fa-solid fa-diagram-project"></i>
+        </div>
+        <h2>Explore Tezos On-Chain Value Flows</h2>
+        <p>
+          Enter any Tezos wallet or smart contract address above (or search by alias) to generate an interactive flow diagram of incoming and outgoing XTZ transactions. Click any counterparty node to copy its transactions and pivot directly into its flow graph.
+        </p>
+      </div>
+
+      <div class="sankey-column-headers" id="sankey-col-headers" style="display: none;">
+        <div class="col-hdr-inflows">
+          <i class="fa-solid fa-circle-arrow-right"></i>
+          <span id="hdr-inflows-label">Inflows (Senders)</span>
+        </div>
+        <div class="col-hdr-center" id="hdr-center-label">Target Account Hub</div>
+        <div class="col-hdr-outflows">
+          <span id="hdr-outflows-label">Outflows (Receivers)</span>
+          <i class="fa-solid fa-circle-arrow-right"></i>
+        </div>
+      </div>
+
+      <div id="sankey-diagram"></div>
+    </div>
+  </div>
+
+  <!-- Floating Rich Tooltip -->
+  <div id="sankey-tooltip"></div>
+
+  <!-- Slide-over Transaction Inspector Drawer -->
+  <aside id="inspector-drawer" aria-hidden="true">
+    <div class="drawer-header">
+      <div class="drawer-title-group">
+        <img id="drawer-avatar" class="tt-avatar" src="icons/tezos.png" alt="Avatar">
+        <div style="min-width:0;">
+          <div id="drawer-alias" class="tt-alias">Counterparty</div>
+          <span id="drawer-badge" class="tt-badge inflow">Inflow</span>
+        </div>
+      </div>
+      <button type="button" id="drawer-close-btn" class="drawer-close" title="Close inspector">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <div>
+        <div class="toolbar-label" style="margin-bottom:6px;">Address</div>
+        <div class="drawer-address-box" id="drawer-address">tz1...</div>
+      </div>
+
+      <div class="drawer-actions">
+        <button type="button" id="drawer-pivot-btn" class="action-btn" style="background:rgba(99,102,241,0.22);color:#fff;border-color:var(--border-highlight);">
+          <i class="fa-solid fa-diagram-project"></i>
+          <span>Pivot to Address</span>
+        </button>
+        <button type="button" id="drawer-copy-btn" class="action-btn">
+          <i class="fa-regular fa-copy"></i>
+          <span>Copy Address &amp; Txes</span>
+        </button>
+        <a id="drawer-tzkt-link" href="#" target="_blank" rel="noopener" class="action-btn" style="text-decoration:none;">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i>
+          <span>TzKT Profile</span>
+        </a>
+      </div>
+
+      <div class="tt-grid">
+        <div class="tt-metric">
+          <div class="tt-metric-lbl">Total Volume</div>
+          <div class="tt-metric-val" id="drawer-volume">0 ꜩ</div>
+        </div>
+        <div class="tt-metric">
+          <div class="tt-metric-lbl">Transactions</div>
+          <div class="tt-metric-val" id="drawer-txcount">0</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="toolbar-label" style="margin-bottom:8px;">Related Operations (TzKT)</div>
+        <div class="drawer-tx-list" id="drawer-tx-list"></div>
       </div>
     </div>
-    <div id="sankey-diagram"></div>
-    <div class="loader" id="loader"></div>
-  </div>
-  <script src="js/main.js?x=14"></script>
-	<script>
-function updateSlider(slider) {
-  const percent = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
-  slider.style.background = `linear-gradient(to right, rgba(162, 124, 238, 1) 0%, rgba(127, 75, 231, 1) ${percent}%, rgba(24, 17, 44, 0.64) ${percent}%, rgba(24, 17, 44, 0.64) 100%)`;
-}
+  </aside>
 
-window.addEventListener('load', function() {
-  const sliders = document.querySelectorAll('input[type="range"]');
-  
-  sliders.forEach(slider => {
-    updateSlider(slider);
-    slider.addEventListener('input', () => updateSlider(slider));
-  });
-});
-	</script>
+  <script src="js/main.js"></script>
 </body>
 </html>
-
