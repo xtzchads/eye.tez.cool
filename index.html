@@ -8,7 +8,7 @@
   <meta name="description" content="The Eye of Chad is a modern web application that visualizes Tezos blockchain transaction flows using high-readability interactive Sankey diagrams.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Monda:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="css/main.css">
 </head>
@@ -19,6 +19,22 @@
     <i class="fa-solid fa-circle-check"></i>
     <span id="notification-text">Address and transactions copied to clipboard/console</span>
   </div>
+
+  <!-- Original TezCool Header -->
+  <header class="header">
+    <div class="header-content">
+      <nav class="nav-menu">
+        <a href="https://tez.cool/" class="nav-item">HOME</a>
+        <a href="https://up.tez.cool/" class="nav-item">TEZCALM</a>
+        <a href="https://tez.cool/map?q=20000" class="nav-item">CHADMAP</a>
+        <a href="https://eye.tez.cool/" class="nav-item active">THE EYE OF CHAD</a>
+        <a href="https://stake.tez.cool/" class="nav-item">TEZSTAKE</a>
+        <a href="https://trollbox.tez.cool/" class="nav-item">TEZTROLLBOX</a>
+        <a href="https://secret.tez.cool/" class="nav-item">TEZWHALES</a>
+        <a href="https://chat.tez.cool/" class="nav-item">NFTCHAT</a>
+      </nav>
+    </div>
+  </header>
 
   <div id="container">
     <!-- Unified Sankey Workspace with Compact Block Header -->
@@ -60,6 +76,9 @@
               <span class="quick-label">Try:</span>
               <button type="button" class="preset-chip sample-addr-btn" data-address="tz1burnburnburnburnburnburnburjAYjjX" data-alias="Null / Burn Address">
                 <i class="fa-solid fa-fire"></i> Burn
+              </button>
+              <button type="button" class="preset-chip sample-addr-btn" data-address="KT1HbQepzV1nVGg8QVznG7z4RcHseD5kwqBn" data-alias="objkt.com Marketplace">
+                <i class="fa-solid fa-gem"></i> objkt.com
               </button>
             </div>
 
