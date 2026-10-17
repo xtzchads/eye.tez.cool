@@ -1804,3 +1804,17 @@ input[type="range"]::-webkit-slider-thumb:hover {
     padding-right: 48px;
   }
 }
+
+.hub-avatar-link {
+  cursor: pointer;
+}
+
+.hub-avatar-link .hub-avatar-ring {
+  transition: stroke-width 0.16s ease, filter 0.16s ease;
+}
+
+.hub-avatar-link:hover .hub-avatar-ring {
+  stroke-width: 2.6px;
+  filter: drop-shadow(0 0 6px rgba(129, 140, 248, 0.75));
+}
+
