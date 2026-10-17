@@ -1104,6 +1104,13 @@ input[type="range"]::-webkit-slider-thumb:hover {
   box-shadow: 0 0 10px rgba(132, 204, 22, 0.18);
 }
 
+.token-pill-sogni.active {
+  background: rgba(236, 72, 153, 0.18);
+  border-color: rgba(244, 114, 182, 0.52);
+  color: #f472b6;
+  box-shadow: 0 0 10px rgba(236, 72, 153, 0.18);
+}
+
 .token-dot {
   width: 7px;
   height: 7px;
@@ -1156,6 +1163,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .token-dot.xu3o8 {
   background: #84cc16;
   box-shadow: 0 0 6px rgba(132, 204, 22, 0.75);
+}
+
+.token-dot.sogni {
+  background: #ec4899;
+  box-shadow: 0 0 6px rgba(236, 72, 153, 0.75);
 }
 
 .stat-token-breakdown {
@@ -1232,6 +1244,12 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: #bef264;
   border-color: rgba(163, 230, 53, 0.45);
   background: rgba(132, 204, 22, 0.16);
+}
+
+.stat-token-chip.sogni {
+  color: #f472b6;
+  border-color: rgba(244, 114, 182, 0.48);
+  background: rgba(236, 72, 153, 0.16);
 }
 
 .node-filter-input {
@@ -1604,6 +1622,12 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: rgba(132, 204, 22, 0.2);
   color: #bef264;
   border: 1px solid rgba(163, 230, 53, 0.5);
+}
+
+.tt-badge.sogni {
+  background: rgba(236, 72, 153, 0.2);
+  color: #f472b6;
+  border: 1px solid rgba(244, 114, 182, 0.52);
 }
 
 .tt-badge.l2 {
