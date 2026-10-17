@@ -437,11 +437,36 @@ const TOKEN_DEFINITIONS = {
     gradInflow: 'url(#grad-inflow-xu3o8)',
     gradOutflow: 'url(#grad-outflow-xu3o8)',
     gradCircular: 'url(#grad-circular-xu3o8)'
+  },
+  sogni: {
+    key: 'sogni',
+    symbol: 'SOGNI',
+    ticker: 'SOGNI',
+    name: 'Sogni AI (SOGNI)',
+    contract: '0x2767fc1048cd0ae4fd952eef09853301c9dc7173',
+    l2Contract: '0x2767fc1048cd0ae4fd952eef09853301c9dc7173',
+    tokenId: '0',
+    decimals: 18,
+    isNative: false,
+    tezEquivalentRate: 0.001,
+    inflowColor: '#ec4899',
+    inflowLight: '#f472b6',
+    outflowColor: '#db2777',
+    outflowLight: '#f9a8d4',
+    returnColor: '#be185d',
+    returnTextColor: '#fbcfe8',
+    cardBorder: 'rgba(244, 114, 182, 0.42)',
+    badgeBg: 'rgba(236, 72, 153, 0.2)',
+    badgeStroke: 'rgba(244, 114, 182, 0.55)',
+    badgeText: '#f472b6',
+    gradInflow: 'url(#grad-inflow-sogni)',
+    gradOutflow: 'url(#grad-outflow-sogni)',
+    gradCircular: 'url(#grad-circular-sogni)'
   }
 };
 
 const L1_FA_TOKEN_KEYS = ['tzbtc', 'usdt'];
-const L2_ERC20_TOKEN_KEYS = ['usdt_l2', 'usdc', 'wxtz', 'weth', 'lbtc', 'wbtc', 'xu3o8'];
+const L2_ERC20_TOKEN_KEYS = ['usdt_l2', 'usdc', 'wxtz', 'weth', 'lbtc', 'wbtc', 'xu3o8', 'sogni'];
 const FA_TOKEN_KEYS = [...L1_FA_TOKEN_KEYS, ...L2_ERC20_TOKEN_KEYS];
 const ALL_TOKEN_ORDER = ['xtz', ...FA_TOKEN_KEYS];
 const FA_CONTRACT_LIST = L1_FA_TOKEN_KEYS.map((k) => TOKEN_DEFINITIONS[k].contract).join(',');
@@ -459,7 +484,7 @@ FA_TOKEN_KEYS.forEach((k) => {
 });
 
 function createEmptyTokenBalances() {
-  return { tzbtc: 0, usdt: 0, usdt_l2: 0, usdc: 0, wxtz: 0, weth: 0, lbtc: 0, wbtc: 0, xu3o8: 0 };
+  return { tzbtc: 0, usdt: 0, usdt_l2: 0, usdc: 0, wxtz: 0, weth: 0, lbtc: 0, wbtc: 0, xu3o8: 0, sogni: 0 };
 }
 
 // Etherlink L2 Bridge & Blockscout Explorer Constants
@@ -649,6 +674,7 @@ const ETHERLINK_USDC_CONTRACT = '0x796ea11fa2dd751ed01b53c372ffdb4aaa8f00f9';
 const ETHERLINK_WETH_CONTRACT = '0xfc24f770f94edbca6d6f885e12d4317320bcb401';
 const ETHERLINK_WXTZ_CONTRACT = '0xc9b53ab2679f573e480d01e0f49e2b5cfb7a3eab';
 const ETHERLINK_XU3O8_CONTRACT = '0x79052ab3c166d4899a1e0dd033ac3b379af0b1fd';
+const ETHERLINK_SOGNI_CONTRACT = '0x2767fc1048cd0ae4fd952eef09853301c9dc7173';
 const ETHERLINK_USDT_CONTRACT = '0x2c03058c8afc06713be23e58d2febc8337dbfe6a';
 const ETHERLINK_TRACKED_TOKEN_CONTRACTS = [
   ETHERLINK_USDT_CONTRACT,
@@ -657,7 +683,8 @@ const ETHERLINK_TRACKED_TOKEN_CONTRACTS = [
   ETHERLINK_WETH_CONTRACT,
   ETHERLINK_LBTC_CONTRACT,
   ETHERLINK_WBTC_CONTRACT,
-  ETHERLINK_XU3O8_CONTRACT
+  ETHERLINK_XU3O8_CONTRACT,
+  ETHERLINK_SOGNI_CONTRACT
 ];
 
 // LayerZero & Cross-Chain Bridge Contracts on Etherlink L2
@@ -1848,6 +1875,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     [ETHERLINK_LBTC_CONTRACT, 'Lombard Staked Bitcoin (LBTC)'],
     [ETHERLINK_WBTC_CONTRACT, 'Wrapped BTC (WBTC)'],
     [ETHERLINK_XU3O8_CONTRACT, 'Uranium (xU3O8)'],
+    [ETHERLINK_SOGNI_CONTRACT, 'Sogni AI (SOGNI)'],
     ['0x65fe928c5d04a2da42347ba9d4d1c3f4952851f5', 'Superlend XTZ Gateway (WrappedTokenGatewayV3)']
   ]);
 
@@ -2211,37 +2239,24 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     let anyError = false;
     const lists = await Promise.all(
       tokenContracts.map(async (tokAddr) => {
+        const pagRes = await fetchV2PaginatedParallel(`/tokens/${tokAddr}/transfers`, pagesPerToken, {
+          kind: 'token'
+        });
+        if (pagRes.hadError) anyError = true;
         const items = [];
-        let qs = '?items_count=100';
-        for (let p = 0; p < pagesPerToken; p++) {
-          try {
-            const r = await blockscoutFetch(`${ETHERLINK_API_BASE}/tokens/${tokAddr}/transfers${qs}`);
-            if (!r.ok) {
-              anyError = true;
-              break;
+        if (Array.isArray(pagRes.items)) {
+          pagRes.items.forEach((tr) => {
+            const fHash = String(tr.from?.hash || '').toLowerCase();
+            const tHash = String(tr.to?.hash || '').toLowerCase();
+            if (
+              fHash === ETHERLINK_ZERO_ADDRESS ||
+              tHash === ETHERLINK_ZERO_ADDRESS ||
+              tr.type === 'token_minting' ||
+              tr.type === 'token_burning'
+            ) {
+              items.push(tr);
             }
-            const j = await r.json();
-            if (Array.isArray(j?.items)) {
-              j.items.forEach((tr) => {
-                const fHash = String(tr.from?.hash || '').toLowerCase();
-                const tHash = String(tr.to?.hash || '').toLowerCase();
-                if (
-                  fHash === ETHERLINK_ZERO_ADDRESS ||
-                  tHash === ETHERLINK_ZERO_ADDRESS ||
-                  tr.type === 'token_minting' ||
-                  tr.type === 'token_burning'
-                ) {
-                  items.push(tr);
-                }
-              });
-            }
-            const next = buildV2NextQuery(j?.next_page_params);
-            if (!next) break;
-            qs = next;
-          } catch (_) {
-            anyError = true;
-            break;
-          }
+          });
         }
         return items;
       })
@@ -2274,7 +2289,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         ETHERLINK_WETH_CONTRACT,
         ETHERLINK_LBTC_CONTRACT,
         ETHERLINK_WBTC_CONTRACT,
-        ETHERLINK_WXTZ_CONTRACT
+        ETHERLINK_WXTZ_CONTRACT,
+        ETHERLINK_SOGNI_CONTRACT
       ];
       let lzError = false;
       const [directRes, lbtcPoolRes, mintBurnRes] = await Promise.all([
@@ -2361,7 +2377,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       targetTokenKeys.length > 1 &&
       !unfilteredAttempted &&
       evmAddress !== ETHERLINK_WXTZ_CONTRACT &&
-      evmAddress !== ETHERLINK_XU3O8_CONTRACT
+      evmAddress !== ETHERLINK_XU3O8_CONTRACT &&
+      evmAddress !== ETHERLINK_SOGNI_CONTRACT
     ) {
       unfilteredAttempted = true;
       try {
@@ -2426,8 +2443,13 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
     perTokenResults.forEach((items) => allItems.push(...items));
 
-    if (evmAddress === ETHERLINK_WXTZ_CONTRACT || evmAddress === ETHERLINK_XU3O8_CONTRACT) {
-      const extraRes = await fetchZeroAddressTransfersForTokens([evmAddress], 2);
+    if (
+      evmAddress === ETHERLINK_WXTZ_CONTRACT ||
+      evmAddress === ETHERLINK_XU3O8_CONTRACT ||
+      evmAddress === ETHERLINK_SOGNI_CONTRACT
+    ) {
+      const extraPages = evmAddress === ETHERLINK_SOGNI_CONTRACT ? 4 : 2;
+      const extraRes = await fetchZeroAddressTransfersForTokens([evmAddress], extraPages);
       if (extraRes.hadError) anyTokenError = true;
       allItems.push(...extraRes.items);
     }
@@ -2441,6 +2463,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   const needXtzFetch = needXtz && (!existing?.exhausted && (existing?.limit || 0) < numLimit);
   const needFaFetch = needFa && missingL2Keys.length > 0;
+  const needTopTxForOftHub =
+    needFaFetch &&
+    (evmAddress === ETHERLINK_SOGNI_CONTRACT || evmAddress === ETHERLINK_WXTZ_CONTRACT) &&
+    (!existing?.rawTopItems || existing.rawTopItems.length === 0);
   let addrFetchError = false;
   let tokBalFetchError = false;
 
@@ -2457,9 +2483,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         })
     : Promise.resolve(null);
 
-  const topTxV2Promise = needXtzFetch
-    ? fetchV2TransactionsPaginated(enc, xtzTargetPages)
-    : Promise.resolve(null);
+  const topTxV2Promise =
+    needXtzFetch || needTopTxForOftHub
+      ? fetchV2TransactionsPaginated(enc, xtzTargetPages)
+      : Promise.resolve(existing?.rawTopItems ? { items: existing.rawTopItems, exhausted: existing.topExhausted } : null);
 
   const internalV2Promise = needXtzFetch
     ? fetchV2InternalPaginated(enc, xtzTargetPages)
@@ -2572,7 +2599,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       evmAddress !== ETHERLINK_ZERO_ADDRESS &&
       evmAddress !== ETHERLINK_LZ_BRIDGE_CONTRACT &&
       evmAddress !== ETHERLINK_WXTZ_CONTRACT &&
-      evmAddress !== ETHERLINK_XU3O8_CONTRACT
+      evmAddress !== ETHERLINK_XU3O8_CONTRACT &&
+      evmAddress !== ETHERLINK_SOGNI_CONTRACT
     ) {
       L2_ERC20_TOKEN_KEYS.forEach((k) => {
         fetchedL2Tokens.add(k);
@@ -2603,6 +2631,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           ? 'wbtc'
           : sym === 'xu3o8'
           ? 'xu3o8'
+          : sym === 'sogni'
+          ? 'sogni'
           : sym === 'tzbtc'
           ? 'tzbtc'
           : null);
@@ -2752,14 +2782,16 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         if (!sender.address || !target.address) return;
         if (evmAddress === ETHERLINK_KYBERSWAP_ROUTER && sender.address === target.address) return;
 
-        // Route native XTZ LayerZero messaging fee payments on WXTZ.send() / OFT send (0xc7c7f5b3) to LayerZero Bridge
+        // Route native XTZ LayerZero messaging fee payments on WXTZ.send() / SOGNI.send() / OFT send (0xc7c7f5b3) to LayerZero Bridge
         const txMethodLower = String(tx.method || '').toLowerCase();
         const txSelector = String(tx.raw_input || '').slice(0, 10).toLowerCase();
         if (
           evmAddress !== ETHERLINK_WXTZ_CONTRACT &&
+          evmAddress !== ETHERLINK_SOGNI_CONTRACT &&
           evmAddress !== ETHERLINK_LZ_BRIDGE_CONTRACT &&
           (txSelector === '0xc7c7f5b3' ||
-            (target.address === ETHERLINK_WXTZ_CONTRACT && ETHERLINK_LZ_BRIDGE_METHODS.has(txMethodLower)))
+            ((target.address === ETHERLINK_WXTZ_CONTRACT || target.address === ETHERLINK_SOGNI_CONTRACT) &&
+              ETHERLINK_LZ_BRIDGE_METHODS.has(txMethodLower)))
         ) {
           target = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
         }
@@ -2957,10 +2989,76 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     txData.sort((a, b) => (b.id || 0) - (a.id || 0));
   }
 
-  // 3. Parse ERC-20 Token Transfers (USDT, USDC, WXTZ, WETH, LBTC, WBTC, xU3O8) & LayerZero Bridge recognition
+  // 3. Parse ERC-20 Token Transfers (USDT, USDC, WXTZ, WETH, LBTC, WBTC, xU3O8, SOGNI) & LayerZero Bridge recognition
   const faData = existing?.faData ? [...existing.faData] : [];
   const seenFaKeys = new Set(faData.map((f) => f._dedupKey || `${f.hash}:${f['token.contract.address']}:${f.from?.address}:${f.to?.address}`));
   const isZeroHub = evmAddress === ETHERLINK_ZERO_ADDRESS;
+  const isTokenContractHub =
+    evmAddress === ETHERLINK_WXTZ_CONTRACT ||
+    evmAddress === ETHERLINK_XU3O8_CONTRACT ||
+    evmAddress === ETHERLINK_SOGNI_CONTRACT;
+
+  // When inspecting an OFT/wrapper token contract directly (e.g. SOGNI or WXTZ), hydrate OFT send() burns & WXTZ deposit/withdraw from topTxV2Result
+  if (isTokenContractHub && Array.isArray(topTxV2Result?.items)) {
+    const hubTokenKey = CONTRACT_TO_TOKEN_KEY.get(evmAddress);
+    const hubTokenDef = hubTokenKey ? TOKEN_DEFINITIONS[hubTokenKey] : null;
+    if (hubTokenDef) {
+      const hubParty = { address: evmAddress, alias: aliasLookup.get(evmAddress) || hubTokenDef.name };
+      topTxV2Result.items.forEach((tx) => {
+        const isOk = tx.status === 'ok' || tx.result === 'success';
+        if (!isOk) return;
+        const rawInput = String(tx.raw_input || '').toLowerCase();
+        const selector = rawInput.slice(0, 10);
+        const callerParty = makeParty(tx.from?.hash, tx.from?.name);
+        if (!callerParty.address) return;
+        const blk = Number(tx.block_number || 0);
+
+        if (selector === '0xc7c7f5b3' && rawInput.length >= 458) {
+          // LayerZero V2 OFT send(): caller burns tokens in the OFT contract to bridge cross-chain
+          try {
+            const rawAmtBig = BigInt('0x' + rawInput.slice(394, 458));
+            const dustCleaned = (rawAmtBig / 1000000000000n) * 1000000000000n;
+            const scaledAmt = Number(dustCleaned > 0n ? dustCleaned : rawAmtBig);
+            if (scaledAmt > 0) {
+              const inKey = `${tx.hash}:${hubTokenDef.contract}:${callerParty.address}:${evmAddress}:oft-in`;
+              const pairInKey = `${tx.hash}:${hubTokenDef.contract}:${callerParty.address}:${evmAddress}`;
+              if (!seenFaKeys.has(inKey) && !seenFaKeys.has(pairInKey)) {
+                seenFaKeys.add(inKey);
+                seenFaKeys.add(pairInKey);
+                faData.push({
+                  _dedupKey: inKey,
+                  id: blk,
+                  timestamp: tx.timestamp,
+                  'token.contract.address': hubTokenDef.contract,
+                  from: callerParty,
+                  to: hubParty,
+                  amount: String(scaledAmt),
+                  hash: tx.hash
+                });
+              }
+              const lzParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
+              const outKey = `${tx.hash}:${hubTokenDef.contract}:${evmAddress}:${ETHERLINK_LZ_BRIDGE_CONTRACT}:oft-out`;
+              if (!seenFaKeys.has(outKey)) {
+                seenFaKeys.add(outKey);
+                faData.push({
+                  _dedupKey: outKey,
+                  id: blk,
+                  timestamp: tx.timestamp,
+                  'token.contract.address': hubTokenDef.contract,
+                  from: hubParty,
+                  to: lzParty,
+                  amount: String(scaledAmt),
+                  hash: tx.hash
+                });
+              }
+            }
+          } catch (_) {
+            // Ignore malformed calldata
+          }
+        }
+      });
+    }
+  }
 
   if (Array.isArray(tokenTxJson?.items)) {
     tokenTxJson.items.forEach((tr) => {
@@ -2984,6 +3082,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           ? 'wbtc'
           : sym === 'xu3o8'
           ? 'xu3o8'
+          : sym === 'sogni'
+          ? 'sogni'
           : sym === 'tzbtc'
           ? 'tzbtc'
           : null);
@@ -3006,12 +3106,16 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       if (!rawFromHash || rawFromHash === ETHERLINK_ZERO_ADDRESS || trType === 'token_minting') {
         if (isZeroHub) {
           fromParty = { address: ETHERLINK_ZERO_ADDRESS, alias: 'Zero / Mint & Burn Address (0x0)' };
+        } else if (isTokenContractHub && mappedContract === evmAddress) {
+          fromParty = { address: evmAddress, alias: aliasLookup.get(evmAddress) || tokenDef.name };
         } else if (isBridgedToken || isLzMethod) {
           fromParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
         } else if (tokenKey === 'wxtz') {
           fromParty = { address: ETHERLINK_WXTZ_CONTRACT, alias: 'Wrapped XTZ (WXTZ)' };
         } else if (tokenKey === 'xu3o8') {
           fromParty = { address: ETHERLINK_XU3O8_CONTRACT, alias: 'Uranium (xU3O8)' };
+        } else if (tokenKey === 'sogni') {
+          fromParty = { address: ETHERLINK_SOGNI_CONTRACT, alias: 'Sogni AI (SOGNI)' };
         }
       } else if (
         !isZeroHub &&
@@ -3027,12 +3131,16 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       if (!rawToHash || rawToHash === ETHERLINK_ZERO_ADDRESS || trType === 'token_burning') {
         if (isZeroHub) {
           toParty = { address: ETHERLINK_ZERO_ADDRESS, alias: 'Zero / Mint & Burn Address (0x0)' };
+        } else if (isTokenContractHub && mappedContract === evmAddress) {
+          toParty = { address: evmAddress, alias: aliasLookup.get(evmAddress) || tokenDef.name };
         } else if (isBridgedToken || isLzMethod) {
           toParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
         } else if (tokenKey === 'wxtz') {
           toParty = { address: ETHERLINK_WXTZ_CONTRACT, alias: 'Wrapped XTZ (WXTZ)' };
         } else if (tokenKey === 'xu3o8') {
           toParty = { address: ETHERLINK_XU3O8_CONTRACT, alias: 'Uranium (xU3O8)' };
+        } else if (tokenKey === 'sogni') {
+          toParty = { address: ETHERLINK_SOGNI_CONTRACT, alias: 'Sogni AI (SOGNI)' };
         }
       } else if (
         !isZeroHub &&
@@ -3055,8 +3163,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       if (!scaledAmount || scaledAmount <= 0) return;
 
       const faDedupKey = `${tr.transaction_hash}:${mappedContract}:${fromParty.address}:${toParty.address}:${tr.log_index ?? ''}`;
-      if (seenFaKeys.has(faDedupKey)) return;
+      const faPairKey = `${tr.transaction_hash}:${mappedContract}:${fromParty.address}:${toParty.address}`;
+      if (seenFaKeys.has(faDedupKey) || (isTokenContractHub && seenFaKeys.has(faPairKey))) return;
       seenFaKeys.add(faDedupKey);
+      if (isTokenContractHub) seenFaKeys.add(faPairKey);
 
       faData.push({
         _dedupKey: faDedupKey,
@@ -3068,6 +3178,27 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         amount: String(scaledAmount),
         hash: tr.transaction_hash
       });
+
+      // When inspecting an OFT token contract directly, also record the LayerZero Bridge counterparty leg on cross-chain mints/burns
+      if (isTokenContractHub && mappedContract === evmAddress && isLzMethod) {
+        const lzParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
+        if (fromParty.address === evmAddress && toParty.address && toParty.address !== evmAddress) {
+          const lzInKey = `${tr.transaction_hash}:${mappedContract}:${ETHERLINK_LZ_BRIDGE_CONTRACT}:${evmAddress}:lz-in`;
+          if (!seenFaKeys.has(lzInKey)) {
+            seenFaKeys.add(lzInKey);
+            faData.push({
+              _dedupKey: lzInKey,
+              id: Number(tr.block_number || 0),
+              timestamp: tr.timestamp,
+              'token.contract.address': mappedContract,
+              from: lzParty,
+              to: fromParty,
+              amount: String(scaledAmount),
+              hash: tr.transaction_hash
+            });
+          }
+        }
+      }
     });
 
     faData.sort((a, b) => (b.id || 0) - (a.id || 0));
@@ -3564,6 +3695,7 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
   addressToAliasMap.set(ETHERLINK_WETH_CONTRACT, 'Bridged WETH');
   addressToAliasMap.set(ETHERLINK_LBTC_CONTRACT, 'Lombard Staked Bitcoin (LBTC)');
   addressToAliasMap.set(ETHERLINK_XU3O8_CONTRACT, 'Uranium (xU3O8)');
+  addressToAliasMap.set(ETHERLINK_SOGNI_CONTRACT, 'Sogni AI (SOGNI)');
 
   function recordUnifiedFlow(
     map,
@@ -4982,6 +5114,23 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         <stop offset="0%" stop-color="#4d7c0f" stop-opacity="0.92" />
         <stop offset="50%" stop-color="#84cc16" stop-opacity="0.88" />
         <stop offset="100%" stop-color="#d9f99d" stop-opacity="0.92" />
+      </linearGradient>
+
+      <!-- SOGNI (0x2767Fc1048cd0ae4fd952eeF09853301c9DC7173) Sogni AI Hot Pink Gradients -->
+      <linearGradient id="grad-inflow-sogni" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#f9a8d4" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#ec4899" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#be185d" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-sogni" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#be185d" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#ec4899" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#f9a8d4" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-sogni" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#be185d" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#ec4899" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#fbcfe8" stop-opacity="0.92" />
       </linearGradient>
 
       <linearGradient id="grad-self-loop" x1="100%" y1="0%" x2="0%" y2="0%">
