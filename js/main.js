@@ -396,8 +396,8 @@ function extractEtherlinkEvmAddress(parameter) {
 const ROLLUP_INTERNAL_TAGS = new Set([
   '998126b6:b6b9a58a',
   '2eeb2f90:5e3b8dec',
-  'c7e6b1ec:ae9fb4c0'
-  // '556ecc37:efe5d793'
+  'c7e6b1ec:ae9fb4c0',
+  '556ecc37:efe5d793'
 ]);
 
 function isRollupInternalParty(addr) {
