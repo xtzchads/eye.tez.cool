@@ -324,9 +324,9 @@ async function fetchAddressSuggestions(query) {
     dropdown.style.display = 'block';
 
     const encoded = encodeURIComponent(query);
-    let response = await fetch(`https://api.tzkt.io/v1/suggest/accounts/${encoded}`);
+    let response = await fetch(`https://kukai.api.tzkt.io/v1/suggest/accounts/${encoded}`);
     if (!response.ok) {
-      response = await fetch(`https://staging.api.tzkt.io/v1/suggest/accounts/${encoded}`);
+      response = await fetch(`https://staging.kukai.api.tzkt.io/v1/suggest/accounts/${encoded}`);
     }
     if (!response.ok) throw new Error('Network response was not ok');
 
@@ -742,9 +742,9 @@ window.addEventListener('resize', () => {
 async function fetchAccountMetadata(tezosAddress) {
   try {
     const [accRes, balRes] = await Promise.all([
-      fetch(`https://api.tzkt.io/v1/accounts/${encodeURIComponent(tezosAddress)}?select=alias,balance`),
+      fetch(`https://kukai.api.tzkt.io/v1/accounts/${encodeURIComponent(tezosAddress)}?select=alias,balance`),
       fetch(
-        `https://api.tzkt.io/v1/tokens/balances?account=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&select=token,balance`
+        `https://kukai.api.tzkt.io/v1/tokens/balances?account=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&select=token,balance`
       )
     ]);
     const info = accRes.ok ? await accRes.json() : {};
@@ -770,7 +770,7 @@ async function fetchAccountMetadata(tezosAddress) {
 
 async function fetchSpecialAccountOps(tezosAddress) {
   try {
-    const url = `https://api.tzkt.io/v1/accounts/${encodeURIComponent(tezosAddress)}/operations?type=activation,origination,migration&status=applied&limit=100`;
+    const url = `https://kukai.api.tzkt.io/v1/accounts/${encodeURIComponent(tezosAddress)}/operations?type=activation,origination,migration&status=applied&limit=100`;
     const res = await fetch(url);
     if (!res.ok) return [];
     const data = await res.json();
@@ -782,7 +782,7 @@ async function fetchSpecialAccountOps(tezosAddress) {
 
 async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000) {
   const clampLimit = Math.min(10000, Math.max(1, Number(batchLimit) || 10000));
-  const baseUrl = `https://api.tzkt.io/v1/operations/transactions?anyof.sender.target=${encodeURIComponent(tezosAddress)}&status=applied&amount.gt=0&sort.desc=id&select=id,hash,timestamp,amount,sender,target&limit=${clampLimit}`;
+  const baseUrl = `https://kukai.api.tzkt.io/v1/operations/transactions?anyof.sender.target=${encodeURIComponent(tezosAddress)}&status=applied&amount.gt=0&sort.desc=id&select=id,hash,timestamp,amount,sender,target&limit=${clampLimit}`;
   const url = lastId > 0 ? `${baseUrl}&offset.cr=${lastId}` : baseUrl;
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -804,7 +804,7 @@ async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000
 
 async function fetchFaTransfersBatch(tezosAddress, lastId = 0, batchLimit = 10000) {
   const clampLimit = Math.min(10000, Math.max(1, Number(batchLimit) || 10000));
-  const baseUrl = `https://api.tzkt.io/v1/tokens/transfers?anyof.from.to=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&amount.gt=0&sort.desc=id&select=id,timestamp,token,from,to,amount,transactionId&limit=${clampLimit}`;
+  const baseUrl = `https://kukai.api.tzkt.io/v1/tokens/transfers?anyof.from.to=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&amount.gt=0&sort.desc=id&select=id,timestamp,token,from,to,amount,transactionId&limit=${clampLimit}`;
   const url = lastId > 0 ? `${baseUrl}&offset.cr=${lastId}` : baseUrl;
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -844,7 +844,7 @@ async function resolveTxRefsToHashes(refs) {
       const chunk = uniqueIds.slice(i, i + chunkSize);
       try {
         const res = await fetch(
-          `https://api.tzkt.io/v1/operations/transactions?id.in=${chunk.join(',')}&select=id,hash&limit=${chunk.length}`
+          `https://kukai.api.tzkt.io/v1/operations/transactions?id.in=${chunk.join(',')}&select=id,hash&limit=${chunk.length}`
         );
         if (res.ok) {
           const rows = await res.json();
