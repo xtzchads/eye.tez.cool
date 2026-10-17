@@ -2558,7 +2558,7 @@ async function fetchAllData(tezosAddress, requestedLimit) {
       const batchSize = Math.min(10000, Math.max(1000, remaining));
 
       if (loaderStatus) {
-        loaderStatus.textContent = `Fetching FA token transfers (tzBTC / USDt)… ${faCounter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
+        loaderStatus.textContent = `Fetching FA token transfers… ${faCounter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
       }
 
       const batch = await fetchFaTransfersBatch(tezosAddress, faLastOffset, batchSize);
