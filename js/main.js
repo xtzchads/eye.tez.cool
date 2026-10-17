@@ -1046,7 +1046,14 @@ function applyHashFromUrl() {
   const hash = location.hash.slice(1);
   if (!hash) return;
   const [address, resultLimitValue, tezLimitValue, tokensParam] = hash.split(',');
-  const cleanAddr = address ? decodeURIComponent(address.trim()) : '';
+  let cleanAddr = '';
+  if (address) {
+    try {
+      cleanAddr = decodeURIComponent(address.trim());
+    } catch (_) {
+      cleanAddr = address.trim();
+    }
+  }
   if (cleanAddr) {
     input.value = cleanAddr;
   }
@@ -4119,7 +4126,12 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       `;
     }
 
-    const branchesMarkup = branchItemsMarkup + branchToggleMarkup;
+    const totalBranchRows = (n.visibleBranches ? n.visibleBranches.length : 0) + (n.canCollapseBranches ? 1 : 0);
+    const branchHitBridgeMarkup =
+      totalBranchRows > 0
+        ? `<rect class="node-branch-hit-bridge" x="${n.x}" y="${n.y + n.h - 2}" width="${n.w}" height="${totalBranchRows * 26 + 4}" fill="transparent" style="cursor: default;" />`
+        : '';
+    const branchesMarkup = branchHitBridgeMarkup + branchItemsMarkup + branchToggleMarkup;
 
     return `
       <g class="sankey-node-group" data-side="${side}" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-left-x="${textLeftX}" data-right-x="${amountRightX}">
@@ -4249,7 +4261,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         </text>
         ${
           !isL2Hub
-            ? `<image class="hub-avatar-img" href="${hubAvatarUrl}" x="${hubMidX - avatarR}" y="${avatarCy - avatarR}" width="${avatarR * 2}" height="${avatarR * 2}" clip-path="url(#hub-avatar-clip)" preserveAspectRatio="xMidYMid slice" />`
+            ? `<image class="hub-avatar-img" href="${escapeHtml(hubAvatarUrl)}" x="${hubMidX - avatarR}" y="${avatarCy - avatarR}" width="${avatarR * 2}" height="${avatarR * 2}" clip-path="url(#hub-avatar-clip)" preserveAspectRatio="xMidYMid slice" />`
             : ''
         }
         <circle class="hub-avatar-ring" cx="${hubMidX}" cy="${avatarCy}" r="${avatarR + 0.5}" fill="none" stroke="${isL2Hub ? '#34d399' : '#818cf8'}" stroke-width="1.5" />
@@ -4453,6 +4465,7 @@ function bindSankeyInteractions(
   let activeNodes = [];
   let activeLinks = [];
   let currentHoverKey = null;
+  let clearHighlightTimer = null;
   let cachedTooltipW = 300;
   let cachedTooltipH = 150;
 
@@ -4461,7 +4474,15 @@ function bindSankeyInteractions(
     return side === 'in' ? leftNodes[index] : rightNodes[index];
   }
 
+  function cancelScheduledClear() {
+    if (clearHighlightTimer !== null) {
+      clearTimeout(clearHighlightTimer);
+      clearHighlightTimer = null;
+    }
+  }
+
   function clearHighlight() {
+    cancelScheduledClear();
     if (activeLinks.length > 0 || activeNodes.length > 0) {
       for (let i = 0; i < activeLinks.length; i++) {
         const { pathEl, flowEl } = activeLinks[i];
@@ -4477,6 +4498,14 @@ function bindSankeyInteractions(
     }
     currentHoverKey = null;
     if (tooltip) tooltip.style.display = 'none';
+  }
+
+  function scheduleClearHighlight(delayMs = 90) {
+    cancelScheduledClear();
+    clearHighlightTimer = setTimeout(() => {
+      clearHighlightTimer = null;
+      clearHighlight();
+    }, delayMs);
   }
 
   function highlightConnection(addr, side, index, specificToken = null) {
@@ -4624,7 +4653,7 @@ function bindSankeyInteractions(
               : `<div class="tt-address">Grouped smaller counterparties</div>`
           }
         </div>
-        <span class="tt-badge ${badgeClass}">${escapeHtml(badgeText)}</span>
+        <span class="tt-badge ${escapeHtml(badgeClass)}">${escapeHtml(badgeText)}</span>
       </div>
       ${rowsHtml.join('')}
       <div class="tt-footer">
@@ -4664,7 +4693,7 @@ function bindSankeyInteractions(
         </div>
         <div class="tt-metric">
           <div class="tt-metric-lbl">Bridge Transfers</div>
-          <div class="tt-metric-val">${branch.count} tx via ${escapeHtml(shortenAddress(entry.realAddress))}</div>
+          <div class="tt-metric-val">${Number(branch.count) || 0} tx via ${escapeHtml(shortenAddress(entry.realAddress))}</div>
         </div>
       </div>
       <div class="tt-footer">
@@ -4713,7 +4742,7 @@ function bindSankeyInteractions(
 
     tooltip.innerHTML = `
       <div class="tt-header">
-        <img class="tt-avatar" src="${avatarUrl}" alt="" onerror="this.src='icons/tezos.png'">
+        <img class="tt-avatar" src="${escapeHtml(avatarUrl)}" alt="" onerror="this.src='icons/tezos.png'">
         <div class="tt-title-wrap">
           <div class="tt-alias">${escapeHtml(alias)}</div>
           <div class="tt-address">${escapeHtml(targetAddress)}</div>
@@ -4793,6 +4822,7 @@ function bindSankeyInteractions(
   svgEl.addEventListener('mouseover', (evt) => {
     const branchEl = evt.target.closest('.sankey-l2-branch');
     if (branchEl) {
+      cancelScheduledClear();
       const side = branchEl.dataset.side;
       const idx = Number(branchEl.dataset.index);
       const entry = getEntry(side, idx);
@@ -4819,9 +4849,11 @@ function bindSankeyInteractions(
     const inspectBtn = evt.target.closest('.node-inspect-btn');
     const itemEl = evt.target.closest('.sankey-node-group, .sankey-link-wrap, #sankey-center-hub');
     if (!itemEl) {
-      if (currentHoverKey !== null) clearHighlight();
+      if (currentHoverKey !== null) scheduleClearHighlight(90);
       return;
     }
+
+    cancelScheduledClear();
 
     if (itemEl.id === 'sankey-center-hub') {
       if (currentHoverKey !== 'hub') {
@@ -4870,6 +4902,9 @@ function bindSankeyInteractions(
   svgEl.addEventListener('mouseleave', clearHighlight);
 
   svgEl.addEventListener('click', (evt) => {
+    if (evt.target.classList && evt.target.classList.contains('node-branch-hit-bridge')) {
+      return;
+    }
     const branchEl = evt.target.closest('.sankey-l2-branch');
     if (branchEl) {
       evt.stopPropagation();
@@ -5031,7 +5066,7 @@ async function openInspectorDrawer(entry, side) {
               <button type="button" class="drawer-tx-item drawer-l2-branch-btn" data-branch-addr="${escapeHtml(b.address)}" data-branch-net="${escapeHtml(b.network || 'etherlink')}"
                       style="width: 100%; border: 1px solid ${isL2 ? 'rgba(16, 185, 129, 0.45)' : 'rgba(129, 140, 248, 0.45)'}; background: ${isL2 ? 'rgba(6, 78, 59, 0.35)' : 'rgba(30, 27, 75, 0.45)'}; cursor: pointer; text-align: left;">
                 <span style="color: ${isL2 ? '#6ee7b7' : '#c7d2fe'}; font-weight: 600;">
-                  ${isL2 ? 'L2 ↗' : 'L1 ↗'} ${escapeHtml(shortenAddress(b.address))} • +${escapeHtml(formatTez(b.amount, true))} (${b.count} tx)
+                  ${isL2 ? 'L2 ↗' : 'L1 ↗'} ${escapeHtml(shortenAddress(b.address))} • +${escapeHtml(formatTez(b.amount, true))} (${Number(b.count) || 0} tx)
                 </span>
                 <span style="font-size: 0.72rem; color: #34d399; font-weight: 600;">Switch to ${isL2 ? 'L2' : 'L1'} →</span>
               </button>
@@ -5051,7 +5086,7 @@ async function openInspectorDrawer(entry, side) {
           ? getExplorerAddressUrl(entry.realAddress)
           : getExplorerTxUrl(cleanHash, entry.realAddress);
         return `
-          <a class="drawer-tx-item" href="${href}" target="_blank" rel="noopener">
+          <a class="drawer-tx-item" href="${escapeHtml(href)}" target="_blank" rel="noopener">
             <span>#${idx + 1} • ${escapeHtml(displayHash)}</span>
             <i class="fa-solid fa-arrow-up-right-from-square"></i>
           </a>
