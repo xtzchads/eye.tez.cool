@@ -592,12 +592,27 @@ async function onTokenSelectionChanged() {
   if (!addr) return;
   const limit = Number(resultLimitSlider.value) || 10000;
   const cached = cache.get(addr);
+  const needXtz = viewConfig.enabledTokens.has('xtz');
+  const needFa = viewConfig.faEnabled;
 
-  if (viewConfig.faEnabled && (!cached || (!cached.faExhausted && (cached.faLimit || 0) < limit))) {
+  const missingXtz =
+    needXtz &&
+    (!cached || (!cached.exhausted && (cached.limit || 0) < limit) || !cached.specialOpsFetched);
+  const missingFa =
+    needFa &&
+    (!cached ||
+      (!cached.faExhausted && (cached.faLimit || 0) < limit) ||
+      !cached.accountInfo?.tokenBalancesFetched);
+
+  if (missingXtz || missingFa) {
     await generateDataAndDrawDiagram(addr, limit);
   } else if (currentAddress) {
     if (cached) {
-      currentFaData = (cached.faData || []).slice(0, limit);
+      currentRawData = needXtz
+        ? [...(cached.txData || []).slice(0, limit), ...(cached.specialOps || [])]
+        : [];
+      currentFaData = needFa ? (cached.faData || []).slice(0, limit) : [];
+      currentAccountInfo = cached.accountInfo;
     }
     refreshDiagramFromMemory();
   }
@@ -739,21 +754,17 @@ window.addEventListener('resize', () => {
 // TzKT Data Fetching & Smart Session Caching
 // ============================================================================
 
-async function fetchAccountMetadata(tezosAddress) {
+async function fetchAccountTokenBalances(tezosAddress) {
+  const tokenBalances = { tzbtc: 0, usdt: 0 };
   try {
-    const [accRes, balRes] = await Promise.all([
-      fetch(`https://kukai.api.tzkt.io/v1/accounts/${encodeURIComponent(tezosAddress)}?select=alias,balance`),
-      fetch(
-        `https://kukai.api.tzkt.io/v1/tokens/balances?account=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&select=token,balance`
-      )
-    ]);
-    const info = accRes.ok ? await accRes.json() : {};
-    const tokenBalances = { tzbtc: 0, usdt: 0 };
+    const balRes = await fetch(
+      `https://kukai.api.tzkt.io/v1/tokens/balances?account=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&balance.gt=0&select=token.contract.address,balance`
+    );
     if (balRes.ok) {
       const balList = await balRes.json();
       if (Array.isArray(balList)) {
         balList.forEach((item) => {
-          const contractAddr = item.token?.contract?.address;
+          const contractAddr = item['token.contract.address'] || item.token?.contract?.address;
           const tk = CONTRACT_TO_TOKEN_KEY.get(contractAddr);
           if (tk && TOKEN_DEFINITIONS[tk]) {
             const rawBal = parseFloat(item.balance || '0');
@@ -762,19 +773,84 @@ async function fetchAccountMetadata(tezosAddress) {
         });
       }
     }
-    return { ...(info || {}), tokenBalances };
+  } catch {
+    // Ignore balance fetch errors
+  }
+  return tokenBalances;
+}
+
+async function fetchAccountMetadata(tezosAddress, needFa = false) {
+  try {
+    const enc = encodeURIComponent(tezosAddress);
+    const accRes = await fetch(
+      `https://kukai.api.tzkt.io/v1/accounts?address=${enc}&select=alias,balance,numActivations,numOriginations,numMigrations,numTransactions,tokenBalancesCount,tokenTransfersCount`
+    );
+    const accData = accRes.ok ? await accRes.json() : null;
+    const info = (Array.isArray(accData) ? accData[0] : accData) || {};
+
+    let tokenBalances = { tzbtc: 0, usdt: 0 };
+    let tokenBalancesFetched = false;
+    if (needFa) {
+      if ((info.tokenBalancesCount ?? 1) > 0) {
+        tokenBalances = await fetchAccountTokenBalances(tezosAddress);
+      }
+      tokenBalancesFetched = true;
+    } else if (info.tokenBalancesCount === 0) {
+      tokenBalancesFetched = true;
+    }
+
+    return { ...info, tokenBalances, tokenBalancesFetched };
   } catch {
     return null;
   }
 }
 
-async function fetchSpecialAccountOps(tezosAddress) {
+async function fetchSpecialAccountOps(tezosAddress, accountPromise) {
   try {
-    const url = `https://kukai.api.tzkt.io/v1/accounts/${encodeURIComponent(tezosAddress)}/operations?type=activation,origination,migration&status=applied&limit=100`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    const info = accountPromise ? await accountPromise : null;
+    const enc = encodeURIComponent(tezosAddress);
+    const requests = [];
+
+    const hasActivations = info ? Number(info.numActivations) > 0 : tezosAddress.startsWith('tz1');
+    const hasOriginations = info ? Number(info.numOriginations) > 0 : true;
+    const hasMigrations = info ? Number(info.numMigrations) > 0 : true;
+
+    if (hasActivations) {
+      requests.push(
+        fetch(
+          `https://kukai.api.tzkt.io/v1/operations/activations?account=${enc}&select=hash,timestamp,account,balance&limit=1`
+        )
+          .then((r) => (r.ok ? r.json() : []))
+          .then((rows) => (Array.isArray(rows) ? rows.map((op) => ({ ...op, type: 'activation' })) : []))
+          .catch(() => [])
+      );
+    }
+
+    if (hasOriginations) {
+      requests.push(
+        fetch(
+          `https://kukai.api.tzkt.io/v1/operations/originations?anyof.sender.originatedContract=${enc}&status=applied&contractBalance.gt=0&select=hash,timestamp,contractBalance,sender,originatedContract&limit=100`
+        )
+          .then((r) => (r.ok ? r.json() : []))
+          .then((rows) => (Array.isArray(rows) ? rows.map((op) => ({ ...op, type: 'origination' })) : []))
+          .catch(() => [])
+      );
+    }
+
+    if (hasMigrations) {
+      requests.push(
+        fetch(
+          `https://kukai.api.tzkt.io/v1/operations/migrations?account=${enc}&kind.in=bootstrap,subsidy&balanceChange.gt=0&select=hash,timestamp,account,kind,balanceChange&limit=100`
+        )
+          .then((r) => (r.ok ? r.json() : []))
+          .then((rows) => (Array.isArray(rows) ? rows.map((op) => ({ ...op, type: 'migration' })) : []))
+          .catch(() => [])
+      );
+    }
+
+    if (requests.length === 0) return [];
+    const results = await Promise.all(requests);
+    return results.flat();
   } catch {
     return [];
   }
@@ -804,7 +880,7 @@ async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000
 
 async function fetchFaTransfersBatch(tezosAddress, lastId = 0, batchLimit = 10000) {
   const clampLimit = Math.min(10000, Math.max(1, Number(batchLimit) || 10000));
-  const baseUrl = `https://kukai.api.tzkt.io/v1/tokens/transfers?anyof.from.to=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&amount.gt=0&sort.desc=id&select=id,timestamp,token,from,to,amount,transactionId&limit=${clampLimit}`;
+  const baseUrl = `https://kukai.api.tzkt.io/v1/tokens/transfers?anyof.from.to=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&amount.gt=0&sort.desc=id&select=id,timestamp,token.contract.address,from,to,amount,transactionId&limit=${clampLimit}`;
   const url = lastId > 0 ? `${baseUrl}&offset.cr=${lastId}` : baseUrl;
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -890,15 +966,20 @@ function formatTxRefSync(ref) {
 
 async function fetchAllData(tezosAddress, requestedLimit) {
   const numLimit = Number(requestedLimit) || 10000;
+  const needXtz = viewConfig.enabledTokens.has('xtz');
   const needFa = viewConfig.faEnabled;
 
   if (cache.has(tezosAddress)) {
     const cached = cache.get(tezosAddress);
-    const xtzReady = cached.exhausted || cached.limit >= numLimit;
-    const faReady = !needFa || cached.faExhausted || (cached.faLimit || 0) >= numLimit;
+    const xtzReady =
+      !needXtz || ((cached.exhausted || (cached.limit || 0) >= numLimit) && cached.specialOpsFetched);
+    const faReady =
+      !needFa ||
+      ((cached.faExhausted || (cached.faLimit || 0) >= numLimit) &&
+        Boolean(cached.accountInfo?.tokenBalancesFetched));
     if (xtzReady && faReady) {
       return {
-        operations: [...cached.txData.slice(0, numLimit), ...(cached.specialOps || [])],
+        operations: needXtz ? [...cached.txData.slice(0, numLimit), ...(cached.specialOps || [])] : [],
         faTransfers: needFa ? (cached.faData || []).slice(0, numLimit) : [],
         accountInfo: cached.accountInfo
       };
@@ -923,6 +1004,7 @@ async function fetchAllData(tezosAddress, requestedLimit) {
   let lastOffset = existing ? existing.lastOffset : 0;
   let counter = txData.length;
   let exhausted = existing ? Boolean(existing.exhausted) : false;
+  let xtzLimit = existing?.limit || 0;
 
   const faData = existing?.faData ? [...existing.faData] : [];
   let faLastOffset = existing?.faLastOffset || 0;
@@ -930,42 +1012,65 @@ async function fetchAllData(tezosAddress, requestedLimit) {
   let faExhausted = existing ? Boolean(existing.faExhausted) : false;
   let faLimit = existing?.faLimit || 0;
 
-  const accountPromise = existing?.accountInfo
-    ? Promise.resolve(existing.accountInfo)
-    : fetchAccountMetadata(tezosAddress);
-
-  const specialOpsPromise = existing?.specialOps
-    ? Promise.resolve(existing.specialOps)
-    : fetchSpecialAccountOps(tezosAddress);
-
-  while (!exhausted && counter < numLimit) {
-    const remaining = numLimit - counter;
-    const batchSize = Math.min(10000, Math.max(1000, remaining));
-
-    if (loaderStatus) {
-      loaderStatus.textContent = `Fetching XTZ transactions from TzKT… ${counter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
-    }
-
-    const batch = await fetchOperationsBatch(tezosAddress, lastOffset, batchSize);
-    if (!batch || !Array.isArray(batch) || batch.length === 0) {
-      exhausted = true;
-      break;
-    }
-
-    for (let i = 0; i < batch.length; i++) {
-      const op = batch[i];
-      if (op.id && op.hash) {
-        txIdToHashCache.set(Number(op.id), op.hash);
+  const accountPromise = (async () => {
+    if (existing?.accountInfo) {
+      if (needFa && !existing.accountInfo.tokenBalancesFetched) {
+        const tokenBalances =
+          (existing.accountInfo.tokenBalancesCount ?? 1) > 0
+            ? await fetchAccountTokenBalances(tezosAddress)
+            : { tzbtc: 0, usdt: 0 };
+        existing.accountInfo = {
+          ...existing.accountInfo,
+          tokenBalances,
+          tokenBalancesFetched: true
+        };
       }
-      txData.push(op);
+      return existing.accountInfo;
     }
-    lastOffset = batch[batch.length - 1].id;
-    counter = txData.length;
+    return fetchAccountMetadata(tezosAddress, needFa);
+  })();
 
-    if (batch.length < batchSize) {
-      exhausted = true;
-      break;
+  let specialOpsFetched = Boolean(existing?.specialOpsFetched);
+  const specialOpsPromise = !needXtz
+    ? Promise.resolve(existing?.specialOps || [])
+    : existing?.specialOpsFetched
+      ? Promise.resolve(existing.specialOps || [])
+      : fetchSpecialAccountOps(tezosAddress, accountPromise).then((ops) => {
+          specialOpsFetched = true;
+          return ops;
+        });
+
+  if (needXtz) {
+    while (!exhausted && counter < numLimit) {
+      const remaining = numLimit - counter;
+      const batchSize = Math.min(10000, Math.max(1000, remaining));
+
+      if (loaderStatus) {
+        loaderStatus.textContent = `Fetching XTZ transactions from TzKT… ${counter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
+      }
+
+      const batch = await fetchOperationsBatch(tezosAddress, lastOffset, batchSize);
+      if (!batch || !Array.isArray(batch) || batch.length === 0) {
+        exhausted = true;
+        break;
+      }
+
+      for (let i = 0; i < batch.length; i++) {
+        const op = batch[i];
+        if (op.id && op.hash) {
+          txIdToHashCache.set(Number(op.id), op.hash);
+        }
+        txData.push(op);
+      }
+      lastOffset = batch[batch.length - 1].id;
+      counter = txData.length;
+
+      if (batch.length < batchSize) {
+        exhausted = true;
+        break;
+      }
     }
+    xtzLimit = Math.max(counter, existing?.limit || 0, numLimit);
   }
 
   if (needFa) {
@@ -1002,7 +1107,8 @@ async function fetchAllData(tezosAddress, requestedLimit) {
   cache.set(tezosAddress, {
     txData,
     specialOps,
-    limit: Math.max(counter, existing?.limit || 0, numLimit),
+    specialOpsFetched,
+    limit: xtzLimit,
     lastOffset,
     exhausted,
     faData,
@@ -1013,7 +1119,7 @@ async function fetchAllData(tezosAddress, requestedLimit) {
   });
 
   return {
-    operations: [...txData.slice(0, numLimit), ...specialOps],
+    operations: needXtz ? [...txData.slice(0, numLimit), ...specialOps] : [],
     faTransfers: needFa ? faData.slice(0, numLimit) : [],
     accountInfo
   };
@@ -1162,12 +1268,12 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
   // 2. Parse FA Token Transfers (tzBTC, USDt) when FA Tokens switch is enabled
   if (viewConfig.faEnabled && Array.isArray(faTransfers)) {
     faTransfers.forEach((transfer) => {
-      const contractAddr = transfer.token?.contract?.address;
+      const contractAddr = transfer['token.contract.address'] || transfer.token?.contract?.address;
       const tokenKey = CONTRACT_TO_TOKEN_KEY.get(contractAddr);
       if (!tokenKey || !viewConfig.enabledTokens.has(tokenKey)) return;
 
       const tokenDef = TOKEN_DEFINITIONS[tokenKey];
-      const decimals = Number(tokenDef.decimals || transfer.token?.metadata?.decimals || 6);
+      const decimals = Number(tokenDef.decimals || 6);
       const rawAmount = parseFloat(transfer.amount || '0');
       const amount = rawAmount / Math.pow(10, decimals);
       if (!amount || amount <= 0) return;
