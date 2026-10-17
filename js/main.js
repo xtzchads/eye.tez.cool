@@ -1260,14 +1260,40 @@ async function fetchSpecialAccountOps(tezosAddress, accountPromise) {
     }
 
     if (hasMigrations) {
-      requests.push(
-        fetch(
-          `https://kukai.api.tzkt.io/v1/operations/migrations?account=${enc}&kind.in=bootstrap,subsidy&balanceChange.gt=0&select=hash,timestamp,account,kind,balanceChange&limit=100`
-        )
-          .then((r) => (r.ok ? r.json() : []))
-          .then((rows) => (Array.isArray(rows) ? rows.map((op) => ({ ...op, type: 'migration' })) : []))
-          .catch(() => [])
-      );
+      if (tezosAddress === 'KT1TxqZ8QtKvLu3V3JH7Gx58n7Co8pgtpQU5') {
+        // Tezos Liquidity Baking Protocol Subsidy (Granada block 1,589,248 on 2021-08-06 through Tallinn block 13,464,748 on 2026-06-02):
+        // 11,829,743 subsidy blocks across 6 block-time eras (2.5 -> 1.25 -> 1.249999 -> 0.833333 -> 0.666666 -> 0.5 XTZ/block)
+        // totaling 12,430,149.55728 XTZ (12,430,149,557,280 mutez).
+        const knownSubsidyBlocks = 11829743;
+        const totalMigs = Number(info?.numMigrations) || knownSubsidyBlocks + 1;
+        const extraBlocks = Math.max(0, totalMigs - (knownSubsidyBlocks + 1));
+        const totalSubsidyMutez = 12430149557280 + extraBlocks * 500000;
+        requests.push(
+          Promise.resolve([
+            {
+              type: 'migration',
+              kind: 'subsidy',
+              startTimestamp: '2021-08-06T09:36:46Z',
+              timestamp: '2026-06-02T07:08:07Z',
+              account: {
+                address: 'KT1TxqZ8QtKvLu3V3JH7Gx58n7Co8pgtpQU5',
+                alias: info?.alias || 'Sirius DEX'
+              },
+              balanceChange: totalSubsidyMutez,
+              count: knownSubsidyBlocks + extraBlocks
+            }
+          ])
+        );
+      } else {
+        requests.push(
+          fetch(
+            `https://kukai.api.tzkt.io/v1/operations/migrations?account=${enc}&kind.in=bootstrap,subsidy&balanceChange.gt=0&select=hash,timestamp,account,kind,balanceChange&limit=100`
+          )
+            .then((r) => (r.ok ? r.json() : []))
+            .then((rows) => (Array.isArray(rows) ? rows.map((op) => ({ ...op, type: 'migration' })) : []))
+            .catch(() => [])
+        );
+      }
     }
 
     if (requests.length === 0) return [];
@@ -2605,9 +2631,22 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
   addressToAliasMap.set(ETHERLINK_LBTC_CONTRACT, 'Lombard Staked Bitcoin (LBTC)');
   addressToAliasMap.set(ETHERLINK_XU3O8_CONTRACT, 'Uranium (xU3O8)');
 
-  function recordUnifiedFlow(map, keyAddress, displayAlias, amount, timestamp, opRef, isSpecial = false, tokenKey = 'xtz') {
+  function recordUnifiedFlow(
+    map,
+    keyAddress,
+    displayAlias,
+    amount,
+    timestamp,
+    opRef,
+    isSpecial = false,
+    tokenKey = 'xtz',
+    opCount = 1,
+    startTimestamp = timestamp
+  ) {
     if (!amount || amount <= 0) return;
     const tokenDef = TOKEN_DEFINITIONS[tokenKey] || TOKEN_DEFINITIONS.xtz;
+    const countInc = Math.max(1, Number(opCount) || 1);
+    const startTs = startTimestamp instanceof Date && !isNaN(startTimestamp.getTime()) ? startTimestamp : timestamp;
     let nodeEntry = map.get(keyAddress);
 
     if (!nodeEntry) {
@@ -2623,7 +2662,7 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
         amount: 0,
         equivalentTez: 0,
         count: 0,
-        dateRange: { start: timestamp, end: timestamp },
+        dateRange: { start: startTs, end: timestamp },
         txHashes: [],
         txHashSet: new Set(),
         isSpecial
@@ -2634,11 +2673,11 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
         nodeEntry.alias = displayAlias;
         nodeEntry.address = displayAlias;
       }
-      if (timestamp < nodeEntry.dateRange.start) nodeEntry.dateRange.start = timestamp;
+      if (startTs < nodeEntry.dateRange.start) nodeEntry.dateRange.start = startTs;
       if (timestamp > nodeEntry.dateRange.end) nodeEntry.dateRange.end = timestamp;
     }
 
-    nodeEntry.count += 1;
+    nodeEntry.count += countInc;
     if (opRef && !nodeEntry.txHashSet.has(opRef)) {
       nodeEntry.txHashSet.add(opRef);
       nodeEntry.txHashes.push(opRef);
@@ -2662,7 +2701,7 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
     }
     tf.amount += amount;
     tf.equivalentTez = tf.amount * tokenDef.tezEquivalentRate;
-    tf.count += 1;
+    tf.count += countInc;
     if (opRef && !tf.txHashSet.has(opRef)) {
       tf.txHashSet.add(opRef);
       tf.txHashes.push(opRef);
@@ -2767,7 +2806,19 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
 
         const specialKey = '~Subsidy~';
         const amount = parseFloat(operation.balanceChange / 1_000_000);
-        recordUnifiedFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true, 'xtz');
+        const startTs = operation.startTimestamp ? new Date(operation.startTimestamp) : timestamp;
+        recordUnifiedFlow(
+          inflowsMap,
+          specialKey,
+          specialKey,
+          amount,
+          timestamp,
+          operation.hash,
+          true,
+          'xtz',
+          operation.count || 1,
+          startTs
+        );
       } else if (operation.type === 'origination') {
         if (operation.contractBalance > 0) {
           const origAddr = operation.originatedContract?.address || '';
@@ -3204,7 +3255,13 @@ function sortAndGroupFlows(entries, side, totalByTokenMap, totalEquivTez) {
   const multiTokenActive = viewConfig.enabledTokens.size > 1;
 
   const sorted = [...filtered].sort((a, b) => {
-    if (viewConfig.circularFlows && side === 'in' && a.isBidirectional !== b.isBidirectional) {
+    if (
+      viewConfig.circularFlows &&
+      side === 'in' &&
+      !a.isSpecial &&
+      !b.isSpecial &&
+      a.isBidirectional !== b.isBidirectional
+    ) {
       return a.isBidirectional ? -1 : 1;
     }
     if (viewConfig.sortMode === 'count') {
@@ -4123,8 +4180,10 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     const subTitle = n.isAggregate
       ? `${n.count.toLocaleString()} txes • Tap to expand`
       : n.hasCircularReturn
-      ? `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count} in / ${n.returnCount} out`
-      : `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count} tx${n.count > 1 ? 'es' : ''}`;
+      ? `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count.toLocaleString()} in / ${n.returnCount.toLocaleString()} out`
+      : n.realAddress === '~Subsidy~' && n.count > 100
+      ? `${n.count.toLocaleString()} subsidy blocks`
+      : `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count.toLocaleString()} tx${n.count > 1 ? 'es' : ''}`;
 
     const portBarX = isLeft ? n.x + n.w - 5 : n.x;
     const inspectBtnX = isLeft ? n.x + 8 : n.x + n.w - 28;
