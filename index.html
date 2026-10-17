@@ -108,9 +108,7 @@
                 <button type="button" class="preset-chip dust-chip" data-tez="1000" title="Min 1,000 ꜩ">&ge;1K</button>
               </div>
             </div>
-          </div>
 
-          <div class="toolbar-group">
             <div class="toolbar-item">
               <span class="toolbar-label">Scale</span>
               <div class="segmented-control" id="scale-mode-control">
@@ -146,28 +144,57 @@
                 <button type="button" class="seg-btn active" data-circular="on" title="Circular flows: loop return outflows from the Hub back to the sender node">Circular &#8634;</button>
               </div>
             </div>
+          </div>
 
+          <div class="toolbar-group">
             <div class="toolbar-item fa-tokens-control" id="fa-tokens-control">
-              <label class="fa-switch-label" for="fa-tokens-toggle" title="Optionally enable FA token flows (tzBTC &amp; USDt) alongside XTZ">
-                <input type="checkbox" id="fa-tokens-toggle" class="fa-switch-input">
-                <span class="fa-switch-track">
-                  <span class="fa-switch-thumb"></span>
-                </span>
-                <span class="fa-switch-text">FA Tokens</span>
-              </label>
               <div class="fa-token-pills" id="fa-token-pills">
-                <button type="button" class="token-pill token-pill-xtz active" data-token="xtz" title="Toggle XTZ (Tezos native) flows">
+                <button type="button" class="token-pill token-pill-xtz active" data-token="xtz" title="Toggle XTZ (Tezos / Etherlink native) flows">
                   <span class="token-dot xtz"></span>
                   <span>XTZ</span>
                 </button>
-                <button type="button" class="token-pill token-pill-tzbtc" data-token="tzbtc" title="Toggle tzBTC (KT1PWx2mnDueood7fEmfbBDKx1D9BAnnXitn) flows">
-                  <span class="token-dot tzbtc"></span>
-                  <span>tzBTC</span>
-                </button>
-                <button type="button" class="token-pill token-pill-usdt" data-token="usdt" title="Toggle USDt (KT1XnTn74bUtxHfDtBmm2bGZAQfhPbvKWR8o) flows">
-                  <span class="token-dot usdt"></span>
-                  <span>USDt</span>
-                </button>
+                <div class="token-pill-group" data-token-group="fa">
+                  <span class="token-group-label" data-group-toggle="fa" title="Tezos L1 FA Tokens (Click to toggle all FA tokens)">FA</span>
+                  <button type="button" class="token-pill token-pill-tzbtc" data-token="tzbtc" title="Toggle tzBTC (KT1PWx2mnDueood7fEmfbBDKx1D9BAnnXitn) flows">
+                    <span class="token-dot tzbtc"></span>
+                    <span>tzBTC</span>
+                  </button>
+                  <button type="button" class="token-pill token-pill-usdt" data-token="usdt" title="Toggle Tezos FA2 USDt (KT1XnTn74bUtxHfDtBmm2bGZAQfhPbvKWR8o) flows">
+                    <span class="token-dot usdt"></span>
+                    <span>USDt</span>
+                  </button>
+                </div>
+                <div class="token-pill-group" data-token-group="etherlink">
+                  <span class="token-group-label l2" data-group-toggle="etherlink" title="Etherlink L2 ERC-20 Tokens (Click to toggle all Etherlink tokens)">Etherlink</span>
+                  <button type="button" class="token-pill token-pill-usdt_l2" data-token="usdt_l2" title="Toggle Etherlink ERC-20 USDT (0x2C03058C8AFC06713be23e58D2febC8337dbfE6A) flows">
+                    <span class="token-dot usdt_l2"></span>
+                    <span>USDT</span>
+                  </button>
+                  <button type="button" class="token-pill token-pill-usdc" data-token="usdc" title="Toggle Etherlink ERC-20 USDC (0x796Ea11Fa2dD751eD01b53C372fFDB4AAa8f00F9) flows">
+                    <span class="token-dot usdc"></span>
+                    <span>USDC</span>
+                  </button>
+                  <button type="button" class="token-pill token-pill-wxtz" data-token="wxtz" title="Toggle Etherlink ERC-20 WXTZ (0xc9B53AB2679f573e480d01e0f49e2B5CFB7a3EAb) flows">
+                    <span class="token-dot wxtz"></span>
+                    <span>WXTZ</span>
+                  </button>
+                  <button type="button" class="token-pill token-pill-weth" data-token="weth" title="Toggle Etherlink ERC-20 WETH (0xfc24f770F94edBca6D6f885E12d4317320BcB401) flows">
+                    <span class="token-dot weth"></span>
+                    <span>WETH</span>
+                  </button>
+                  <button type="button" class="token-pill token-pill-lbtc" data-token="lbtc" title="Toggle Etherlink ERC-20 LBTC (0xecAc9C5F704e954931349Da37F60E39f515c11c1) flows">
+                    <span class="token-dot lbtc"></span>
+                    <span>LBTC</span>
+                  </button>
+                  <button type="button" class="token-pill token-pill-wbtc" data-token="wbtc" title="Toggle Etherlink ERC-20 WBTC (0xbFc94CD2B1E55999Cfc7347a9313e88702B83d0F) flows">
+                    <span class="token-dot wbtc"></span>
+                    <span>WBTC</span>
+                  </button>
+                  <button type="button" class="token-pill token-pill-xu3o8" data-token="xu3o8" title="Toggle Etherlink ERC-20 xU3O8 (0x79052Ab3C166D4899a1e0DD033aC3b379AF0B1fD) flows">
+                    <span class="token-dot xu3o8"></span>
+                    <span>xU3O8</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -240,18 +267,6 @@
         </p>
       </div>
 
-      <div class="sankey-column-headers" id="sankey-col-headers" style="display: none;">
-        <div class="col-hdr-inflows">
-          <i class="fa-solid fa-circle-arrow-right"></i>
-          <span id="hdr-inflows-label">Inflows (Senders)</span>
-        </div>
-        <div class="col-hdr-center" id="hdr-center-label">Target Account Hub</div>
-        <div class="col-hdr-outflows">
-          <span id="hdr-outflows-label">Outflows (Receivers)</span>
-          <i class="fa-solid fa-circle-arrow-right"></i>
-        </div>
-      </div>
-
       <div id="sankey-diagram"></div>
     </div>
   </div>
@@ -306,12 +321,12 @@
       </div>
 
       <div>
-        <div class="toolbar-label" style="margin-bottom:8px;">Related Operations (TzKT)</div>
+        <div class="toolbar-label" id="drawer-ops-label" style="margin-bottom:8px;">Related Operations (TzKT)</div>
         <div class="drawer-tx-list" id="drawer-tx-list"></div>
       </div>
     </div>
   </aside>
 
-  <script src="js/main.js?v=1"></script>
+  <script src="js/main.js?v=final_"></script>
 </body>
 </html>
