@@ -2804,7 +2804,7 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
         const accAlias = operation.account?.alias || accAddr;
         addressToAliasMap.set(accAddr, accAlias);
 
-        const specialKey = '~Subsidy~';
+        const specialKey = '~Subsidy (all time)~';
         const amount = parseFloat(operation.balanceChange / 1_000_000);
         const startTs = operation.startTimestamp ? new Date(operation.startTimestamp) : timestamp;
         recordUnifiedFlow(
@@ -4181,7 +4181,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       ? `${n.count.toLocaleString()} txes • Tap to expand`
       : n.hasCircularReturn
       ? `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count.toLocaleString()} in / ${n.returnCount.toLocaleString()} out`
-      : n.realAddress === '~Subsidy~' && n.count > 100
+      : n.realAddress === '~Subsidy (all time)~' && n.count > 100
       ? `${n.count.toLocaleString()} subsidy blocks`
       : `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count.toLocaleString()} tx${n.count > 1 ? 'es' : ''}`;
 
