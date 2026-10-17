@@ -1477,6 +1477,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   }
 
   let unfilteredFaShortCircuit = Boolean(existing?.unfilteredFaComplete);
+  let unfilteredAttempted = Boolean(existing?.unfilteredTried);
 
   async function fetchV2TokenTransfersSmart(encodedAddr, targetTokenKeys, maxPagesPerToken = 15) {
     // 1. Special case: 0x0000000000000000000000000000000000000000 times out on /addresses/0x0/token-transfers
@@ -1522,10 +1523,11 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     const allItems = [];
     if (
       targetTokenKeys.length > 1 &&
-      !existing?.unfilteredTried &&
+      !unfilteredAttempted &&
       evmAddress !== ETHERLINK_WXTZ_CONTRACT &&
       evmAddress !== ETHERLINK_XU3O8_CONTRACT
     ) {
+      unfilteredAttempted = true;
       try {
         const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers?type=ERC-20&items_count=100`);
         if (res.ok) {
@@ -1681,6 +1683,17 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       tokenBalances: createEmptyTokenBalances(),
       tokenBalancesFetched: !addrJson?.has_tokens
     };
+    if (
+      addrJson &&
+      addrJson.has_token_transfers === false &&
+      evmAddress !== ETHERLINK_ZERO_ADDRESS &&
+      evmAddress !== ETHERLINK_LZ_BRIDGE_CONTRACT &&
+      evmAddress !== ETHERLINK_WXTZ_CONTRACT &&
+      evmAddress !== ETHERLINK_XU3O8_CONTRACT
+    ) {
+      L2_ERC20_TOKEN_KEYS.forEach((k) => fetchedL2Tokens.add(k));
+      unfilteredFaShortCircuit = true;
+    }
   }
 
   if (tokJson && accountInfo) {
@@ -2158,7 +2171,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     faLastOffset: null,
     faExhausted: L2_ERC20_TOKEN_KEYS.every((k) => fetchedL2Tokens.has(k)),
     fetchedL2Tokens,
-    unfilteredTried: needFaFetch ? true : Boolean(existing?.unfilteredTried),
+    unfilteredTried: unfilteredAttempted,
     unfilteredFaComplete: unfilteredFaShortCircuit,
     accountInfo
   });
