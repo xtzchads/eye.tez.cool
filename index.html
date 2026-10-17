@@ -147,6 +147,30 @@
               </div>
             </div>
 
+            <div class="toolbar-item fa-tokens-control" id="fa-tokens-control">
+              <label class="fa-switch-label" for="fa-tokens-toggle" title="Optionally enable FA token flows (tzBTC &amp; USDt) alongside XTZ">
+                <input type="checkbox" id="fa-tokens-toggle" class="fa-switch-input">
+                <span class="fa-switch-track">
+                  <span class="fa-switch-thumb"></span>
+                </span>
+                <span class="fa-switch-text">FA Tokens</span>
+              </label>
+              <div class="fa-token-pills" id="fa-token-pills">
+                <button type="button" class="token-pill token-pill-xtz active" data-token="xtz" title="Toggle XTZ (Tezos native) flows">
+                  <span class="token-dot xtz"></span>
+                  <span>XTZ</span>
+                </button>
+                <button type="button" class="token-pill token-pill-tzbtc" data-token="tzbtc" title="Toggle tzBTC (KT1PWx2mnDueood7fEmfbBDKx1D9BAnnXitn) flows">
+                  <span class="token-dot tzbtc"></span>
+                  <span>tzBTC</span>
+                </button>
+                <button type="button" class="token-pill token-pill-usdt" data-token="usdt" title="Toggle USDt (KT1XnTn74bUtxHfDtBmm2bGZAQfhPbvKWR8o) flows">
+                  <span class="token-dot usdt"></span>
+                  <span>USDt</span>
+                </button>
+              </div>
+            </div>
+
             <div class="filter-box-wrap">
               <i class="fa-solid fa-magnifying-glass"></i>
               <input type="text" id="node-search" class="node-filter-input" placeholder="Filter nodes...">
