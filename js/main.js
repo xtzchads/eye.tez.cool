@@ -3,6 +3,182 @@
 // Single node per counterparty address with multiple color-coded token ribbons
 // ============================================================================
 
+// TzKT L1 Indexer & Rate-Limit Constants
+const TZKT_INDEXER = 'https://kukai.api.tzkt.io';
+const TZKT_API_BASE = `${TZKT_INDEXER.replace(/\/+(v1\/?)?$/, '')}/v1`;
+const TZKT_FALLBACK_API_BASE = 'https://staging.kukai.api.tzkt.io/v1';
+const TZKT_EXPLORER_BASE = 'https://tzkt.io';
+const TZKT_AVATARS_BASE = 'https://services.tzkt.io/v1/avatars';
+const TZKT_MAX_REQUESTS_PER_SECOND = 6;
+const TZKT_MAX_RETRIES = 3;
+const TZKT_RETRY_BASE_DELAY_MS = 650;
+
+// Tracks the most recent TzKT API error for UI diagnostics
+let lastTzktApiError = null;
+
+function isRetryableHttpStatus(status) {
+  return status === 408 || status === 429 || (status >= 500 && status <= 599);
+}
+
+function parseRetryAfterMs(response, attempt) {
+  const header = response?.headers?.get?.('Retry-After');
+  if (header) {
+    const secs = Number(header);
+    if (!isNaN(secs) && secs > 0) {
+      return Math.min(10000, Math.ceil(secs * 1000));
+    }
+    const dateMs = Date.parse(header);
+    if (!isNaN(dateMs)) {
+      const diff = dateMs - Date.now();
+      if (diff > 0) return Math.min(10000, diff);
+    }
+  }
+  const jitter = Math.floor(Math.random() * 200);
+  return Math.min(8000, TZKT_RETRY_BASE_DELAY_MS * Math.pow(2, attempt) + jitter);
+}
+
+// TzKT Rate-Limited Parallel Request Scheduler (max 6 concurrent & max 6 requests/second)
+const tzktFetch = (() => {
+  const windowMs = 1020; // 1,000ms sliding window + 20ms safety buffer
+  const dispatchTimestamps = [];
+  const queue = [];
+  let inFlight = 0;
+  let timerId = null;
+  let cooldownUntil = 0;
+
+  function pruneOldTimestamps(now) {
+    while (dispatchTimestamps.length > 0 && now - dispatchTimestamps[0] >= windowMs) {
+      dispatchTimestamps.shift();
+    }
+  }
+
+  function scheduleNextPump(waitMs) {
+    if (timerId !== null) return;
+    timerId = setTimeout(() => {
+      timerId = null;
+      pump();
+    }, Math.max(10, waitMs));
+  }
+
+  function applyCooldown(delayMs) {
+    const target = Date.now() + delayMs;
+    if (target > cooldownUntil) {
+      cooldownUntil = target;
+    }
+  }
+
+  function pump() {
+    while (queue.length > 0 && inFlight < TZKT_MAX_REQUESTS_PER_SECOND) {
+      const now = Date.now();
+      if (now < cooldownUntil) {
+        scheduleNextPump(cooldownUntil - now);
+        return;
+      }
+
+      pruneOldTimestamps(now);
+
+      if (dispatchTimestamps.length >= TZKT_MAX_REQUESTS_PER_SECOND) {
+        const waitMs = windowMs - (now - dispatchTimestamps[0]);
+        scheduleNextPump(waitMs);
+        return;
+      }
+
+      const task = queue.shift();
+      inFlight++;
+      dispatchTimestamps.push(now);
+
+      Promise.resolve()
+        .then(() => fetch(task.url, task.options))
+        .then(task.resolve, task.reject)
+        .finally(() => {
+          inFlight--;
+          pump();
+        });
+    }
+  }
+
+  function enqueueSingleAttempt(url, options, isRetry = false) {
+    return new Promise((resolve, reject) => {
+      const task = { url, options, resolve, reject };
+      if (isRetry) {
+        queue.unshift(task);
+      } else {
+        queue.push(task);
+      }
+      pump();
+    });
+  }
+
+  return async function scheduleTzktFetch(url, options) {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= TZKT_MAX_RETRIES; attempt++) {
+      const useFallback =
+        attempt === TZKT_MAX_RETRIES &&
+        TZKT_FALLBACK_API_BASE &&
+        TZKT_FALLBACK_API_BASE !== TZKT_API_BASE &&
+        String(url).startsWith(TZKT_API_BASE);
+      const targetUrl = useFallback ? String(url).replace(TZKT_API_BASE, TZKT_FALLBACK_API_BASE) : url;
+
+      try {
+        const response = await enqueueSingleAttempt(targetUrl, options, attempt > 0);
+        if (response.ok) {
+          return response;
+        }
+
+        const status = response.status;
+        if (!isRetryableHttpStatus(status)) {
+          // 4xx Client Error (e.g., 400 Bad Request, 404 Not Found): fail fast without retrying
+          lastTzktApiError = {
+            status,
+            category: '4xx',
+            isClientError: true,
+            url: targetUrl,
+            timestamp: Date.now()
+          };
+          return response;
+        }
+
+        // 429 Rate Limit, 408 Timeout, or 5xx Server Error
+        lastTzktApiError = {
+          status,
+          category: status === 429 ? '429' : '5xx',
+          isServerError: true,
+          url: targetUrl,
+          timestamp: Date.now()
+        };
+
+        if (attempt < TZKT_MAX_RETRIES) {
+          const delayMs = parseRetryAfterMs(response, attempt);
+          if (status === 429) {
+            applyCooldown(delayMs);
+          }
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+
+        return response;
+      } catch (err) {
+        lastErr = err;
+        lastTzktApiError = {
+          status: 0,
+          category: 'network',
+          isNetworkError: true,
+          message: err?.message || 'Network error',
+          url: targetUrl,
+          timestamp: Date.now()
+        };
+        if (attempt < TZKT_MAX_RETRIES) {
+          const delayMs = parseRetryAfterMs(null, attempt);
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        throw lastErr;
+      }
+    }
+    throw lastErr || new Error('TzKT request failed');
+  };
+})();
+
 const input = document.getElementById('target-address');
 const dropdown = document.createElement('div');
 dropdown.className = 'address-dropdown';
@@ -294,6 +470,177 @@ const ETHERLINK_L2_WITHDRAW_PRECOMPILE = '0xff0000000000000000000000000000000000
 const ETHERLINK_ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const ETHERLINK_API_BASE = 'https://explorer.etherlink.com/api/v2';
 const ETHERLINK_EXPLORER_BASE = 'https://explorer.etherlink.com';
+const BLOCKSCOUT_MAX_REQUESTS_PER_MINUTE = 170; // Safe headroom under Blockscout's 180 req / 60s IP bucket
+const BLOCKSCOUT_MAX_PARALLEL_REQUESTS = 10;    // Max concurrent in-flight requests to maximize burst throughput
+const BLOCKSCOUT_MAX_RETRIES = 3;
+const BLOCKSCOUT_RETRY_BASE_DELAY_MS = 650;
+
+let lastBlockscoutApiError = null;
+
+function parseBlockscoutRetryDelayMs(response, attempt) {
+  const rlResetMs = Number(response?.headers?.get?.('x-ratelimit-reset'));
+  if (!isNaN(rlResetMs) && rlResetMs > 0) {
+    return Math.min(15000, Math.max(500, Math.ceil(rlResetMs)));
+  }
+  return parseRetryAfterMs(response, attempt);
+}
+
+// Blockscout Rate-Limited Parallel Request Scheduler (180 req / 60s sliding bucket + max 10 concurrent in-flight)
+const blockscoutFetch = (() => {
+  const windowMs = 60200; // 60,000ms sliding window + 200ms safety buffer
+  const dispatchTimestamps = [];
+  const queue = [];
+  let inFlight = 0;
+  let timerId = null;
+  let cooldownUntil = 0;
+
+  function pruneOldTimestamps(now) {
+    while (dispatchTimestamps.length > 0 && now - dispatchTimestamps[0] >= windowMs) {
+      dispatchTimestamps.shift();
+    }
+  }
+
+  function scheduleNextPump(waitMs) {
+    if (timerId !== null) return;
+    timerId = setTimeout(() => {
+      timerId = null;
+      pump();
+    }, Math.max(10, waitMs));
+  }
+
+  function applyCooldown(delayMs) {
+    const target = Date.now() + delayMs;
+    if (target > cooldownUntil) {
+      cooldownUntil = target;
+    }
+  }
+
+  function inspectRateLimitHeaders(response) {
+    if (!response?.headers?.get) return;
+    const remRaw = response.headers.get('x-ratelimit-remaining');
+    const resetRaw = response.headers.get('x-ratelimit-reset');
+    if (remRaw !== null && resetRaw !== null) {
+      const remaining = Number(remRaw);
+      const resetMs = Number(resetRaw);
+      if (!isNaN(remaining) && !isNaN(resetMs) && remaining <= inFlight + 2 && resetMs > 0) {
+        applyCooldown(Math.min(60000, Math.max(250, resetMs)));
+      }
+    }
+  }
+
+  function pump() {
+    while (queue.length > 0 && inFlight < BLOCKSCOUT_MAX_PARALLEL_REQUESTS) {
+      const now = Date.now();
+      if (now < cooldownUntil) {
+        scheduleNextPump(cooldownUntil - now);
+        return;
+      }
+
+      pruneOldTimestamps(now);
+
+      if (dispatchTimestamps.length >= BLOCKSCOUT_MAX_REQUESTS_PER_MINUTE) {
+        const waitMs = windowMs - (now - dispatchTimestamps[0]);
+        scheduleNextPump(waitMs);
+        return;
+      }
+
+      const task = queue.shift();
+      inFlight++;
+      dispatchTimestamps.push(now);
+
+      Promise.resolve()
+        .then(() => fetch(task.url, task.options))
+        .then(
+          (res) => {
+            inspectRateLimitHeaders(res);
+            task.resolve(res);
+          },
+          task.reject
+        )
+        .finally(() => {
+          inFlight--;
+          pump();
+        });
+    }
+  }
+
+  function enqueueSingleAttempt(url, options, isRetry = false) {
+    return new Promise((resolve, reject) => {
+      const task = { url, options, resolve, reject };
+      if (isRetry) {
+        queue.unshift(task);
+      } else {
+        queue.push(task);
+      }
+      pump();
+    });
+  }
+
+  return async function scheduleBlockscoutFetch(url, options) {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= BLOCKSCOUT_MAX_RETRIES; attempt++) {
+      try {
+        const response = await enqueueSingleAttempt(url, options, attempt > 0);
+        if (response.ok) {
+          return response;
+        }
+
+        const status = response.status;
+        if (!isRetryableHttpStatus(status)) {
+          // 4xx Client Error (e.g., 400 Bad Request, 404 Not Found, 422 Unprocessable): fail fast without retrying
+          lastBlockscoutApiError = {
+            source: 'Blockscout',
+            status,
+            category: '4xx',
+            isClientError: true,
+            url,
+            timestamp: Date.now()
+          };
+          return response;
+        }
+
+        // 429 Rate Limit, 408 Timeout, or 5xx Server Error
+        lastBlockscoutApiError = {
+          source: 'Blockscout',
+          status,
+          category: status === 429 ? '429' : '5xx',
+          isServerError: true,
+          url,
+          timestamp: Date.now()
+        };
+
+        if (attempt < BLOCKSCOUT_MAX_RETRIES) {
+          const delayMs = parseBlockscoutRetryDelayMs(response, attempt);
+          if (status === 429) {
+            applyCooldown(delayMs);
+          }
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+
+        return response;
+      } catch (err) {
+        lastErr = err;
+        lastBlockscoutApiError = {
+          source: 'Blockscout',
+          status: 0,
+          category: 'network',
+          isNetworkError: true,
+          message: err?.message || 'Network error',
+          url,
+          timestamp: Date.now()
+        };
+        if (attempt < BLOCKSCOUT_MAX_RETRIES) {
+          const delayMs = parseRetryAfterMs(null, attempt);
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        throw lastErr;
+      }
+    }
+    throw lastErr;
+  };
+})();
 
 // Etherlink Tracked ERC-20 Token Contracts (lowercase)
 const ETHERLINK_LBTC_CONTRACT = '0xecac9c5f704e954931349da37f60e39f515c11c1';
@@ -353,7 +700,7 @@ function getExplorerTxUrl(hash, fallbackAddress = '') {
   if (isEtherlinkTxHash(clean)) {
     return `${ETHERLINK_EXPLORER_BASE}/tx/${encodeURIComponent(clean)}`;
   }
-  return `https://tzkt.io/${encodeURIComponent(clean)}`;
+  return `${TZKT_EXPLORER_BASE}/${encodeURIComponent(clean)}`;
 }
 
 function getExplorerAddressUrl(addr) {
@@ -361,7 +708,7 @@ function getExplorerAddressUrl(addr) {
   if (isEtherlinkAddress(clean)) {
     return `${ETHERLINK_EXPLORER_BASE}/address/${encodeURIComponent(clean)}`;
   }
-  return `https://tzkt.io/${encodeURIComponent(clean)}`;
+  return `${TZKT_EXPLORER_BASE}/${encodeURIComponent(clean)}`;
 }
 
 function extractEtherlinkEvmAddress(parameter) {
@@ -656,9 +1003,9 @@ async function fetchAddressSuggestions(query) {
     dropdown.style.display = 'block';
 
     const encoded = encodeURIComponent(query);
-    let response = await fetch(`https://kukai.api.tzkt.io/v1/suggest/accounts/${encoded}`);
+    let response = await tzktFetch(`${TZKT_API_BASE}/suggest/accounts/${encoded}`);
     if (!response.ok) {
-      response = await fetch(`https://staging.kukai.api.tzkt.io/v1/suggest/accounts/${encoded}`);
+      response = await tzktFetch(`${TZKT_FALLBACK_API_BASE}/suggest/accounts/${encoded}`);
     }
     if (!response.ok) throw new Error('Network response was not ok');
 
@@ -689,7 +1036,7 @@ function renderDropdown(suggestions) {
 
     const avatar = document.createElement('img');
     avatar.className = 'address-avatar';
-    avatar.src = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(suggestion.address)}`;
+    avatar.src = `${TZKT_AVATARS_BASE}/${encodeURIComponent(suggestion.address)}`;
     avatar.onerror = function () {
       const initial = (suggestion.alias || suggestion.address || 'T').charAt(0).toUpperCase();
       this.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%23312e81'/%3E%3Ctext x='50%25' y='54%25' font-family='sans-serif' font-size='14' font-weight='bold' text-anchor='middle' dominant-baseline='middle' fill='%23c7d2fe'%3E${encodeURIComponent(initial)}%3C/text%3E%3C/svg%3E`;
@@ -1179,8 +1526,8 @@ window.addEventListener('resize', () => {
 async function fetchAccountTokenBalances(tezosAddress) {
   const tokenBalances = createEmptyTokenBalances();
   try {
-    const balRes = await fetch(
-      `https://kukai.api.tzkt.io/v1/tokens/balances?account=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&balance.gt=0&select=token.contract.address,balance`
+    const balRes = await tzktFetch(
+      `${TZKT_API_BASE}/tokens/balances?account=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&balance.gt=0&select=token.contract.address,balance`
     );
     if (balRes.ok) {
       const balList = await balRes.json();
@@ -1204,22 +1551,16 @@ async function fetchAccountTokenBalances(tezosAddress) {
 async function fetchAccountMetadata(tezosAddress, needFa = false) {
   try {
     const enc = encodeURIComponent(tezosAddress);
-    const accRes = await fetch(
-      `https://kukai.api.tzkt.io/v1/accounts?address=${enc}&select=alias,balance,numActivations,numOriginations,numMigrations,numTransactions,tokenBalancesCount,tokenTransfersCount`
-    );
-    const accData = accRes.ok ? await accRes.json() : null;
+    const accPromise = tzktFetch(
+      `${TZKT_API_BASE}/accounts?address=${enc}&select=alias,balance,numActivations,numOriginations,numMigrations,numTransactions,tokenBalancesCount,tokenTransfersCount`
+    ).then((r) => (r.ok ? r.json() : null));
+
+    const balPromise = needFa ? fetchAccountTokenBalances(tezosAddress) : Promise.resolve(null);
+    const [accData, fetchedBalances] = await Promise.all([accPromise, balPromise]);
     const info = (Array.isArray(accData) ? accData[0] : accData) || {};
 
-    let tokenBalances = createEmptyTokenBalances();
-    let tokenBalancesFetched = false;
-    if (needFa) {
-      if ((info.tokenBalancesCount ?? 1) > 0) {
-        tokenBalances = await fetchAccountTokenBalances(tezosAddress);
-      }
-      tokenBalancesFetched = true;
-    } else if (info.tokenBalancesCount === 0) {
-      tokenBalancesFetched = true;
-    }
+    const tokenBalances = fetchedBalances || createEmptyTokenBalances();
+    const tokenBalancesFetched = Boolean(needFa || info.tokenBalancesCount === 0);
 
     return { ...info, tokenBalances, tokenBalancesFetched };
   } catch {
@@ -1239,8 +1580,8 @@ async function fetchSpecialAccountOps(tezosAddress, accountPromise) {
 
     if (hasActivations) {
       requests.push(
-        fetch(
-          `https://kukai.api.tzkt.io/v1/operations/activations?account=${enc}&select=hash,timestamp,account,balance&limit=1`
+        tzktFetch(
+          `${TZKT_API_BASE}/operations/activations?account=${enc}&select=hash,timestamp,account,balance&limit=1`
         )
           .then((r) => (r.ok ? r.json() : []))
           .then((rows) => (Array.isArray(rows) ? rows.map((op) => ({ ...op, type: 'activation' })) : []))
@@ -1250,8 +1591,8 @@ async function fetchSpecialAccountOps(tezosAddress, accountPromise) {
 
     if (hasOriginations) {
       requests.push(
-        fetch(
-          `https://kukai.api.tzkt.io/v1/operations/originations?anyof.sender.originatedContract=${enc}&status=applied&contractBalance.gt=0&select=hash,timestamp,contractBalance,sender,originatedContract&limit=100`
+        tzktFetch(
+          `${TZKT_API_BASE}/operations/originations?anyof.sender.originatedContract=${enc}&status=applied&contractBalance.gt=0&select=hash,timestamp,contractBalance,sender,originatedContract&limit=100`
         )
           .then((r) => (r.ok ? r.json() : []))
           .then((rows) => (Array.isArray(rows) ? rows.map((op) => ({ ...op, type: 'origination' })) : []))
@@ -1286,8 +1627,8 @@ async function fetchSpecialAccountOps(tezosAddress, accountPromise) {
         );
       } else {
         requests.push(
-          fetch(
-            `https://kukai.api.tzkt.io/v1/operations/migrations?account=${enc}&kind.in=bootstrap,subsidy&balanceChange.gt=0&select=hash,timestamp,account,kind,balanceChange&limit=100`
+          tzktFetch(
+            `${TZKT_API_BASE}/operations/migrations?account=${enc}&kind.in=bootstrap,subsidy&balanceChange.gt=0&select=hash,timestamp,account,kind,balanceChange&limit=100`
           )
             .then((r) => (r.ok ? r.json() : []))
             .then((rows) => (Array.isArray(rows) ? rows.map((op) => ({ ...op, type: 'migration' })) : []))
@@ -1304,30 +1645,37 @@ async function fetchSpecialAccountOps(tezosAddress, accountPromise) {
   }
 }
 
-async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000) {
+async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000, offset = 0) {
   const clampLimit = Math.min(10000, Math.max(1, Number(batchLimit) || 10000));
   const selectFields =
     tezosAddress === ETHERLINK_BRIDGE_CONTRACT || tezosAddress === ETHERLINK_WITHDRAW_CONTRACT
       ? 'id,hash,timestamp,amount,sender,target,parameter'
       : 'id,hash,timestamp,amount,sender,target';
-  const baseUrl = `https://kukai.api.tzkt.io/v1/operations/transactions?anyof.sender.target=${encodeURIComponent(tezosAddress)}&status=applied&amount.gt=0&sort.desc=id&select=${selectFields}&limit=${clampLimit}`;
-  const url = lastId > 0 ? `${baseUrl}&offset.cr=${lastId}` : baseUrl;
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`TzKT HTTP ${response.status}`);
-      return await response.json();
-    } catch (err) {
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 600));
-      } else {
-        console.error('Error fetching operations batch:', err);
-        return null;
-      }
-    }
+  const baseUrl = `${TZKT_API_BASE}/operations/transactions?anyof.sender.target=${encodeURIComponent(tezosAddress)}&status=applied&amount.gt=0&sort.desc=id&select=${selectFields}&limit=${clampLimit}`;
+  let url = baseUrl;
+  if (lastId > 0) {
+    url += offset > 0 ? `&id.lt=${lastId}&offset=${offset}` : `&offset.cr=${lastId}`;
+  } else if (offset > 0) {
+    url += `&offset=${offset}`;
   }
-  return null;
+
+  try {
+    const response = await tzktFetch(url);
+    if (!response.ok) {
+      const errType =
+        response.status >= 500
+          ? '5xx Server Error'
+          : response.status === 429
+          ? '429 Rate Limit'
+          : '4xx Client Error';
+      console.error(`TzKT ${errType} (HTTP ${response.status}) fetching operations batch`);
+      return null;
+    }
+    return await response.json();
+  } catch (err) {
+    console.error('Network error fetching operations batch:', err);
+    return null;
+  }
 }
 
 async function enrichBridgeDepositParameters(txData) {
@@ -1373,27 +1721,33 @@ async function enrichBridgeDepositParameters(txData) {
 
   const ids = Array.from(opById.keys());
   const chunkSize = 80;
+  const chunks = [];
   for (let i = 0; i < ids.length; i += chunkSize) {
-    const chunk = ids.slice(i, i + chunkSize);
-    try {
-      const res = await fetch(
-        `https://kukai.api.tzkt.io/v1/operations/transactions?id.in=${chunk.join(',')}&select=id,parameter&limit=${chunk.length}`
-      );
-      if (res.ok) {
-        const rows = await res.json();
-        if (Array.isArray(rows)) {
-          rows.forEach((row) => {
-            const targetOp = opById.get(Number(row.id));
-            if (targetOp && row.parameter) {
-              targetOp.parameter = row.parameter;
-            }
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Error enriching Etherlink bridge parameters:', err);
-    }
+    chunks.push(ids.slice(i, i + chunkSize));
   }
+
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const res = await tzktFetch(
+          `${TZKT_API_BASE}/operations/transactions?id.in=${chunk.join(',')}&select=id,parameter&limit=${chunk.length}`
+        );
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows)) {
+            rows.forEach((row) => {
+              const targetOp = opById.get(Number(row.id));
+              if (targetOp && row.parameter) {
+                targetOp.parameter = row.parameter;
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error enriching Etherlink bridge parameters:', err);
+      }
+    })
+  );
 }
 
 async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
@@ -1421,7 +1775,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       return {
         operations: needXtz ? cached.txData.slice(0, numLimit) : [],
         faTransfers: needFa ? sliceL2FaTransfersByDepth(cached.faData || [], numLimit) : [],
-        accountInfo: cached.accountInfo
+        accountInfo: cached.accountInfo,
+        apiError: null
       };
     }
   }
@@ -1440,12 +1795,19 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     loaderStatus.textContent = 'Fetching Etherlink L2 transactions from Blockscout…';
   }
 
+  lastBlockscoutApiError = null;
+  lastTzktApiError = null;
+
   const existing = cache.get(evmAddress);
   const enc = encodeURIComponent(evmAddress);
   const fetchedL2Tokens = new Set(existing?.fetchedL2Tokens || []);
   const tokenExhaustedMap = new Map(existing?.tokenExhaustedMap || []);
   const tokenNextQsMap = new Map(existing?.tokenNextQsMap || []);
+  const tokenNextParamsMap = new Map(existing?.tokenNextParamsMap || []);
+  const tokenMaxBlockMap = new Map(existing?.tokenMaxBlockMap || []);
+  const tokenSegmentsMap = new Map(existing?.tokenSegmentsMap || []);
   const tokenPagesMap = new Map(existing?.tokenPagesMap || []);
+  const tokenItemsMap = new Map(existing?.tokenItemsMap || []);
 
   const missingL2Keys = enabledL2Keys.filter(
     (k) => !fetchedL2Tokens.has(k) || (!tokenExhaustedMap.get(k) && (tokenPagesMap.get(k) || 0) < faTargetPages)
@@ -1503,81 +1865,311 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     return parts.length > 0 ? `?${parts.join('&')}` : '';
   }
 
-  async function fetchV2InternalPaginated(encodedAddr, targetPages = 5) {
-    const priorItems = Array.isArray(existing?.rawIntItems) ? existing.rawIntItems : [];
-    const priorPages = existing?.intPagesFetched || 0;
-    if (existing?.intExhausted) {
-      return { items: priorItems, exhausted: true, nextQs: null, pagesFetched: priorPages };
+  function buildSyntheticV2BlockQuery(blockNumber, isInternal = false, extraParams = {}) {
+    const params = {
+      ...extraParams,
+      block_number: blockNumber,
+      index: 999999,
+      items_count: 100
+    };
+    if (isInternal) {
+      params.transaction_index = 999999;
     }
+    return buildV2NextQuery(params);
+  }
+
+  function getV2ItemUniqueKey(item, kind) {
+    if (!item) return '';
+    if (kind === 'internal') {
+      return `${item.transaction_hash || ''}:${item.block_number || 0}:${item.transaction_index ?? ''}:${item.index ?? ''}`;
+    }
+    if (kind === 'token') {
+      return `${item.transaction_hash || ''}:${item.block_number || 0}:${item.log_index ?? item.index ?? ''}`;
+    }
+    return `${item.hash || ''}:${item.block_number || 0}`;
+  }
+
+  // Parallel Block-Cursor Wave Paginator for Blockscout v2 endpoints
+  async function fetchV2PaginatedParallel(endpointPath, targetPages, opts = {}) {
+    const {
+      kind = 'tx',
+      extraParams = {},
+      priorItems = [],
+      priorPages = 0,
+      priorExhausted = false,
+      priorNextQs = null,
+      priorNextParams = null,
+      priorMaxBlock = 0,
+      priorSegments = []
+    } = opts;
+
+    if (priorExhausted) {
+      return {
+        items: priorItems,
+        exhausted: true,
+        hadError: false,
+        nextQs: null,
+        nextParams: null,
+        lastMaxBlock: priorMaxBlock,
+        prefetchedSegments: [],
+        pagesFetched: priorPages
+      };
+    }
+
+    const isInternal = kind === 'internal';
     const allItems = [...priorItems];
-    let nextQs = priorPages > 0 && existing?.intNextQs ? existing.intNextQs : '?items_count=100';
-    let exhausted = false;
+    const seenKeys = new Set(allItems.map((it) => getV2ItemUniqueKey(it, kind)).filter(Boolean));
     let pagesFetched = priorPages;
-    for (let page = priorPages; page < targetPages; page++) {
-      try {
-        const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/internal-transactions${nextQs}`);
-        if (!res.ok) break;
-        const json = await res.json();
-        pagesFetched++;
-        if (Array.isArray(json?.items)) {
-          allItems.push(...json.items);
+    let exhausted = false;
+    let hadError = false;
+    let nextParams = priorNextParams || null;
+    let lastMaxBlock = priorMaxBlock || 0;
+    const prefetchedSegments = Array.isArray(priorSegments) ? [...priorSegments] : [];
+    const defaultInitQs =
+      Object.keys(extraParams).length > 0 ? buildV2NextQuery(extraParams) : '?items_count=100';
+    let nextQs = priorPages > 0 && priorNextQs ? priorNextQs : defaultInitQs;
+
+    function appendItemsDedup(items) {
+      if (!Array.isArray(items)) return;
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const k = getV2ItemUniqueKey(it, kind);
+        if (!k || !seenKeys.has(k)) {
+          if (k) seenKeys.add(k);
+          allItems.push(it);
         }
-        const qs = buildV2NextQuery(json?.next_page_params);
-        if (!qs) {
-          exhausted = true;
-          nextQs = null;
-          break;
-        }
-        nextQs = qs;
-      } catch (_) {
-        break;
       }
     }
-    return { items: allItems, exhausted, nextQs, pagesFetched };
+
+    async function fetchSinglePage(qs) {
+      try {
+        const res = await blockscoutFetch(`${ETHERLINK_API_BASE}${endpointPath}${qs}`);
+        if (!res.ok) {
+          const errType =
+            res.status >= 500
+              ? '5xx Server Error'
+              : res.status === 429
+              ? '429 Rate Limit'
+              : '4xx Client Error';
+          console.error(`Blockscout ${errType} (HTTP ${res.status}) fetching ${endpointPath}`);
+          return { ok: false, status: res.status };
+        }
+        const json = await res.json();
+        const items = Array.isArray(json?.items) ? json.items : [];
+        const np = json?.next_page_params || null;
+        const nqs = buildV2NextQuery(np, extraParams);
+        let maxBlock = 0;
+        let minBlock = Infinity;
+        for (let i = 0; i < items.length; i++) {
+          const b = Number(items[i]?.block_number || 0);
+          if (b > maxBlock) maxBlock = b;
+          if (b > 0 && b < minBlock) minBlock = b;
+        }
+        if (np?.block_number) {
+          const nb = Number(np.block_number);
+          if (nb > 0 && nb < minBlock) minBlock = nb;
+          if (nb > maxBlock) maxBlock = nb;
+        }
+        return {
+          ok: true,
+          items,
+          nextParams: np,
+          nextQs: nqs,
+          maxBlock,
+          minBlock: Number.isFinite(minBlock) ? minBlock : 0
+        };
+      } catch (err) {
+        console.error(`Network error fetching Blockscout ${endpointPath}:`, err);
+        return { ok: false, status: 0 };
+      }
+    }
+
+    function absorbContiguousPrefetchedSegments() {
+      if (prefetchedSegments.length === 0 || exhausted) return;
+      prefetchedSegments.sort((a, b) => b.startBlock - a.startBlock);
+
+      while (prefetchedSegments.length > 0 && !exhausted) {
+        const frontierBlock = Number(nextParams?.block_number || 0);
+        if (!(frontierBlock > 0)) break;
+
+        const seg = prefetchedSegments[0];
+        if (seg.startBlock < frontierBlock) {
+          // A block gap (seg.startBlock, frontierBlock) still remains above this segment
+          break;
+        }
+
+        // seg.startBlock >= frontierBlock: zero gap between contiguous history and seg!
+        prefetchedSegments.shift();
+        appendItemsDedup(seg.items);
+
+        const segNextBlock = Number(seg.nextParams?.block_number || 0);
+        const extendsDeeper =
+          !seg.nextQs ||
+          segNextBlock < frontierBlock ||
+          (segNextBlock === frontierBlock &&
+            Number(seg.nextParams?.index ?? 0) < Number(nextParams?.index ?? 0));
+
+        if (extendsDeeper) {
+          lastMaxBlock = seg.maxBlock || frontierBlock;
+          nextParams = seg.nextParams;
+          nextQs = seg.nextQs;
+          if (!nextQs) {
+            exhausted = true;
+            prefetchedSegments.length = 0;
+            pagesFetched = Math.max(pagesFetched + 1, Math.ceil(allItems.length / 100));
+            break;
+          }
+          pagesFetched = Math.floor(allItems.length / 100);
+        }
+      }
+    }
+
+    // Step 1: Fetch Page 1 first if starting fresh (avoids wasted speculative calls on wallets with <= 100 items)
+    if (pagesFetched === 0 && targetPages > 0) {
+      const p1 = await fetchSinglePage(nextQs);
+      if (!p1.ok) {
+        hadError = true;
+        return {
+          items: allItems,
+          exhausted: false,
+          hadError: true,
+          nextQs,
+          nextParams,
+          lastMaxBlock,
+          prefetchedSegments,
+          pagesFetched
+        };
+      }
+      appendItemsDedup(p1.items);
+      pagesFetched = 1;
+      lastMaxBlock = p1.maxBlock;
+      nextParams = p1.nextParams;
+      nextQs = p1.nextQs;
+      if (!nextQs) {
+        exhausted = true;
+      }
+    }
+
+    // Step 2: Parallel Overlapping Block-Cursor Waves for multi-page histories
+    while (pagesFetched < targetPages && !exhausted && !hadError && nextQs) {
+      absorbContiguousPrefetchedSegments();
+      if (pagesFetched >= targetPages || exhausted || !nextQs) break;
+
+      const remainingItemsNeeded = Math.max(100, targetPages * 100 - allItems.length);
+      const remainingPages = Math.max(1, Math.ceil(remainingItemsNeeded / 85));
+      const cursorBlock = Number(nextParams?.block_number || 0);
+      const rawDelta = lastMaxBlock > cursorBlock ? lastMaxBlock - cursorBlock : 0;
+      const waveSize =
+        remainingPages > 1 && cursorBlock > 10 && rawDelta > 0
+          ? Math.min(4, remainingPages)
+          : 1;
+
+      const waveSpecs = [{ isExact: true, qs: nextQs, startBlock: cursorBlock }];
+      if (waveSize > 1) {
+        const existingSegBlocks = new Set(prefetchedSegments.map((s) => s.startBlock));
+        const stepBlock = Math.max(1, Math.floor(rawDelta * 0.85));
+        for (let w = 1; w < waveSize; w++) {
+          const specBlock = Math.max(1, cursorBlock - w * stepBlock);
+          if (specBlock > 1 && specBlock < cursorBlock && !existingSegBlocks.has(specBlock)) {
+            existingSegBlocks.add(specBlock);
+            waveSpecs.push({
+              isExact: false,
+              qs: buildSyntheticV2BlockQuery(specBlock, isInternal, extraParams),
+              startBlock: specBlock
+            });
+          }
+        }
+      }
+
+      const waveResults = await Promise.all(
+        waveSpecs.map((spec) => fetchSinglePage(spec.qs).then((res) => ({ spec, res })))
+      );
+
+      const exactOut = waveResults[0].res;
+      if (!exactOut.ok) {
+        hadError = true;
+        break;
+      }
+
+      appendItemsDedup(exactOut.items);
+      lastMaxBlock = exactOut.maxBlock || cursorBlock;
+      nextParams = exactOut.nextParams;
+      nextQs = exactOut.nextQs;
+      if (!nextQs) {
+        exhausted = true;
+        pagesFetched = Math.max(pagesFetched + 1, Math.ceil(allItems.length / 100));
+      } else {
+        pagesFetched = Math.floor(allItems.length / 100);
+      }
+
+      for (let w = 1; w < waveResults.length; w++) {
+        const { spec, res } = waveResults[w];
+        if (res.ok && (res.items.length > 0 || !res.nextQs)) {
+          prefetchedSegments.push({
+            startBlock: spec.startBlock,
+            maxBlock: res.maxBlock,
+            minBlock: res.minBlock,
+            items: res.items,
+            nextParams: res.nextParams,
+            nextQs: res.nextQs
+          });
+        }
+      }
+
+      absorbContiguousPrefetchedSegments();
+    }
+
+    return {
+      items: allItems,
+      exhausted,
+      hadError,
+      nextQs,
+      nextParams,
+      lastMaxBlock,
+      prefetchedSegments,
+      pagesFetched
+    };
+  }
+
+  async function fetchV2InternalPaginated(encodedAddr, targetPages = 5) {
+    return fetchV2PaginatedParallel(`/addresses/${encodedAddr}/internal-transactions`, targetPages, {
+      kind: 'internal',
+      priorItems: Array.isArray(existing?.rawIntItems) ? existing.rawIntItems : [],
+      priorPages: existing?.intPagesFetched || 0,
+      priorExhausted: Boolean(existing?.intExhausted),
+      priorNextQs: existing?.intNextQs || null,
+      priorNextParams: existing?.intNextParams || null,
+      priorMaxBlock: existing?.intLastMaxBlock || 0,
+      priorSegments: existing?.intPrefetchedSegments || []
+    });
   }
 
   async function fetchV2TransactionsPaginated(encodedAddr, targetPages = 5) {
-    const priorItems = Array.isArray(existing?.rawTopItems) ? existing.rawTopItems : [];
-    const priorPages = existing?.topPagesFetched || 0;
-    if (existing?.topExhausted) {
-      return { items: priorItems, exhausted: true, nextQs: null, pagesFetched: priorPages };
-    }
-    const allItems = [...priorItems];
-    let nextQs = priorPages > 0 && existing?.topNextQs ? existing.topNextQs : '?items_count=100';
-    let exhausted = false;
-    let pagesFetched = priorPages;
-    for (let page = priorPages; page < targetPages; page++) {
-      try {
-        const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/transactions${nextQs}`);
-        if (!res.ok) break;
-        const json = await res.json();
-        pagesFetched++;
-        if (Array.isArray(json?.items)) {
-          allItems.push(...json.items);
-        }
-        const qs = buildV2NextQuery(json?.next_page_params);
-        if (!qs) {
-          exhausted = true;
-          nextQs = null;
-          break;
-        }
-        nextQs = qs;
-      } catch (_) {
-        break;
-      }
-    }
-    return { items: allItems, exhausted, nextQs, pagesFetched };
+    return fetchV2PaginatedParallel(`/addresses/${encodedAddr}/transactions`, targetPages, {
+      kind: 'tx',
+      priorItems: Array.isArray(existing?.rawTopItems) ? existing.rawTopItems : [],
+      priorPages: existing?.topPagesFetched || 0,
+      priorExhausted: Boolean(existing?.topExhausted),
+      priorNextQs: existing?.topNextQs || null,
+      priorNextParams: existing?.topNextParams || null,
+      priorMaxBlock: existing?.topLastMaxBlock || 0,
+      priorSegments: existing?.topPrefetchedSegments || []
+    });
   }
 
   async function fetchZeroAddressTransfersForTokens(tokenContracts, pagesPerToken = 2) {
+    let anyError = false;
     const lists = await Promise.all(
       tokenContracts.map(async (tokAddr) => {
         const items = [];
         let qs = '?items_count=100';
         for (let p = 0; p < pagesPerToken; p++) {
           try {
-            const r = await fetch(`${ETHERLINK_API_BASE}/tokens/${tokAddr}/transfers${qs}`);
-            if (!r.ok) break;
+            const r = await blockscoutFetch(`${ETHERLINK_API_BASE}/tokens/${tokAddr}/transfers${qs}`);
+            if (!r.ok) {
+              anyError = true;
+              break;
+            }
             const j = await r.json();
             if (Array.isArray(j?.items)) {
               j.items.forEach((tr) => {
@@ -1597,13 +2189,14 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
             if (!next) break;
             qs = next;
           } catch (_) {
+            anyError = true;
             break;
           }
         }
         return items;
       })
     );
-    return lists.flat();
+    return { items: lists.flat(), hadError: anyError };
   }
 
   let unfilteredFaShortCircuit = Boolean(existing?.unfilteredFaComplete);
@@ -1613,12 +2206,14 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     // 1. Special case: 0x0000000000000000000000000000000000000000 times out on /addresses/0x0/token-transfers
     if (evmAddress === ETHERLINK_ZERO_ADDRESS) {
       const targetContracts = targetTokenKeys.map((k) => TOKEN_DEFINITIONS[k]?.l2Contract).filter(Boolean);
-      const zeroItems = await fetchZeroAddressTransfersForTokens(targetContracts, 2);
-      targetTokenKeys.forEach((k) => {
-        fetchedL2Tokens.add(k);
-        tokenExhaustedMap.set(k, true);
-      });
-      return { items: zeroItems, exhausted: true };
+      const zeroRes = await fetchZeroAddressTransfersForTokens(targetContracts, 2);
+      if (!zeroRes.hadError) {
+        targetTokenKeys.forEach((k) => {
+          fetchedL2Tokens.add(k);
+          tokenExhaustedMap.set(k, true);
+        });
+      }
+      return { items: zeroRes.items, exhausted: !zeroRes.hadError, hadError: zeroRes.hadError };
     }
 
     // 2. Special case: LayerZero Bridge contract (hydrate direct transfers + LBTC pool transfers + bridged token mint/burns)
@@ -1630,26 +2225,49 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         ETHERLINK_LBTC_CONTRACT,
         ETHERLINK_WBTC_CONTRACT
       ];
-      const [directRes, lbtcPoolRes, mintBurnItems] = await Promise.all([
-        fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers?type=ERC-20&items_count=100`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
-        fetch(`${ETHERLINK_API_BASE}/addresses/${ETHERLINK_LBTC_TOKEN_POOL}/token-transfers?type=ERC-20&items_count=100`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
+      let lzError = false;
+      const [directRes, lbtcPoolRes, mintBurnRes] = await Promise.all([
+        blockscoutFetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers?type=ERC-20&items_count=100`)
+          .then((r) => {
+            if (!r.ok) {
+              lzError = true;
+              return null;
+            }
+            return r.json();
+          })
+          .catch(() => {
+            lzError = true;
+            return null;
+          }),
+        blockscoutFetch(`${ETHERLINK_API_BASE}/addresses/${ETHERLINK_LBTC_TOKEN_POOL}/token-transfers?type=ERC-20&items_count=100`)
+          .then((r) => {
+            if (!r.ok) {
+              lzError = true;
+              return null;
+            }
+            return r.json();
+          })
+          .catch(() => {
+            lzError = true;
+            return null;
+          }),
         fetchZeroAddressTransfersForTokens(bridgedContracts, 2)
       ]);
-      L2_ERC20_TOKEN_KEYS.forEach((k) => {
-        fetchedL2Tokens.add(k);
-        tokenExhaustedMap.set(k, true);
-      });
+      const hadErr = lzError || mintBurnRes.hadError;
+      if (!hadErr) {
+        L2_ERC20_TOKEN_KEYS.forEach((k) => {
+          fetchedL2Tokens.add(k);
+          tokenExhaustedMap.set(k, true);
+        });
+      }
       return {
         items: [
           ...(Array.isArray(directRes?.items) ? directRes.items : []),
           ...(Array.isArray(lbtcPoolRes?.items) ? lbtcPoolRes.items : []),
-          ...mintBurnItems
+          ...mintBurnRes.items
         ],
-        exhausted: true
+        exhausted: !hadErr,
+        hadError: hadErr
       };
     }
 
@@ -1665,7 +2283,9 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     ) {
       unfilteredAttempted = true;
       try {
-        const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers?type=ERC-20&items_count=100`);
+        const res = await blockscoutFetch(
+          `${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers?type=ERC-20&items_count=100`
+        );
         if (res.ok) {
           const json = await res.json();
           if (!json?.next_page_params && Array.isArray(json?.items)) {
@@ -1674,70 +2294,85 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
               fetchedL2Tokens.add(k);
               tokenExhaustedMap.set(k, true);
             });
-            return { items: json.items, exhausted: true };
+            return { items: json.items, exhausted: true, hadError: false };
           }
         }
       } catch (_) {
-        // Proceed to per-token fetch
+        // Proceed to per-token parallel fetch
       }
     }
 
-    // 4. Per-Token Fetch: paginate ONLY the currently enabled missing token(s) (?type=ERC-20&token={contract}&items_count=100)
+    // 4. Per-Token Parallel Fetch: paginate all enabled missing token(s) concurrently using parallel block-cursor waves
+    let anyTokenError = false;
     const perTokenResults = await Promise.all(
       targetTokenKeys.map(async (tk) => {
         const tokAddr = TOKEN_DEFINITIONS[tk]?.l2Contract || TOKEN_DEFINITIONS[tk]?.contract;
         if (!tokAddr || tokenExhaustedMap.get(tk)) return [];
-        const tokenItems = [];
-        const startPage = tokenPagesMap.get(tk) || 0;
-        let nextQs =
-          startPage > 0 && tokenNextQsMap.get(tk)
-            ? tokenNextQsMap.get(tk)
-            : `?type=ERC-20&token=${tokAddr}&items_count=100`;
-        let pagesDone = startPage;
-        let tkExhausted = false;
-        for (let page = startPage; page < maxPagesPerToken; page++) {
-          try {
-            const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers${nextQs}`);
-            if (!res.ok) break;
-            const json = await res.json();
-            pagesDone++;
-            if (Array.isArray(json?.items)) {
-              tokenItems.push(...json.items);
-            }
-            const qs = buildV2NextQuery(json?.next_page_params, { type: 'ERC-20', token: tokAddr });
-            if (!qs) {
-              tkExhausted = true;
-              nextQs = null;
-              break;
-            }
-            nextQs = qs;
-          } catch (_) {
-            break;
+
+        const pagRes = await fetchV2PaginatedParallel(
+          `/addresses/${encodedAddr}/token-transfers`,
+          maxPagesPerToken,
+          {
+            kind: 'token',
+            extraParams: { type: 'ERC-20', token: tokAddr },
+            priorItems: tokenItemsMap.get(tk) || [],
+            priorPages: tokenPagesMap.get(tk) || 0,
+            priorExhausted: Boolean(tokenExhaustedMap.get(tk)),
+            priorNextQs: tokenNextQsMap.get(tk) || null,
+            priorNextParams: tokenNextParamsMap.get(tk) || null,
+            priorMaxBlock: tokenMaxBlockMap.get(tk) || 0,
+            priorSegments: tokenSegmentsMap.get(tk) || []
           }
+        );
+
+        if (pagRes.hadError) {
+          anyTokenError = true;
         }
-        fetchedL2Tokens.add(tk);
-        tokenPagesMap.set(tk, pagesDone);
-        tokenNextQsMap.set(tk, nextQs);
-        tokenExhaustedMap.set(tk, tkExhausted);
-        return tokenItems;
+        if (pagRes.pagesFetched > 0 || !pagRes.hadError) {
+          fetchedL2Tokens.add(tk);
+        }
+        tokenItemsMap.set(tk, pagRes.items);
+        tokenPagesMap.set(tk, pagRes.pagesFetched);
+        tokenNextQsMap.set(tk, pagRes.nextQs);
+        tokenNextParamsMap.set(tk, pagRes.nextParams);
+        tokenMaxBlockMap.set(tk, pagRes.lastMaxBlock);
+        tokenSegmentsMap.set(tk, pagRes.prefetchedSegments);
+        tokenExhaustedMap.set(tk, pagRes.exhausted);
+        return pagRes.items;
       })
     );
 
     perTokenResults.forEach((items) => allItems.push(...items));
 
     if (evmAddress === ETHERLINK_WXTZ_CONTRACT || evmAddress === ETHERLINK_XU3O8_CONTRACT) {
-      const extra = await fetchZeroAddressTransfersForTokens([evmAddress], 2);
-      allItems.push(...extra);
+      const extraRes = await fetchZeroAddressTransfersForTokens([evmAddress], 2);
+      if (extraRes.hadError) anyTokenError = true;
+      allItems.push(...extraRes.items);
     }
 
-    return { items: allItems, exhausted: targetTokenKeys.every((k) => tokenExhaustedMap.get(k)) };
+    return {
+      items: allItems,
+      exhausted: targetTokenKeys.every((k) => tokenExhaustedMap.get(k)),
+      hadError: anyTokenError
+    };
   }
 
   const needXtzFetch = needXtz && (!existing?.exhausted && (existing?.limit || 0) < numLimit);
   const needFaFetch = needFa && missingL2Keys.length > 0;
+  let addrFetchError = false;
+  let tokBalFetchError = false;
 
   const addrPromise = !existing?.accountInfo
-    ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}`).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))
+    ? blockscoutFetch(`${ETHERLINK_API_BASE}/addresses/${enc}`)
+        .then((r) => {
+          if (r.ok) return r.json();
+          if (r.status !== 404) addrFetchError = true;
+          return {};
+        })
+        .catch(() => {
+          addrFetchError = true;
+          return {};
+        })
     : Promise.resolve(null);
 
   const topTxV2Promise = needXtzFetch
@@ -1750,9 +2385,16 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   const tokensBalPromise =
     needFa && !existing?.accountInfo?.tokenBalancesFetched
-      ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}/tokens?type=ERC-20`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null)
+      ? blockscoutFetch(`${ETHERLINK_API_BASE}/addresses/${enc}/tokens?type=ERC-20`)
+          .then((r) => {
+            if (r.ok) return r.json();
+            if (r.status !== 404) tokBalFetchError = true;
+            return null;
+          })
+          .catch(() => {
+            tokBalFetchError = true;
+            return null;
+          })
       : Promise.resolve(null);
 
   const tokenTxPromise = needFaFetch
@@ -1765,12 +2407,12 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   const l1DepositsPromise =
     needXtz && !existing?.l1DepositsChecked
-      ? fetch(
+      ? tzktFetch(
           isFeedAddress
-            ? `https://kukai.api.tzkt.io/v1/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
+            ? `${TZKT_API_BASE}/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
             : isWithdrawPrecompile
-            ? `https://kukai.api.tzkt.io/v1/operations/transactions?anyof.sender.target=${ETHERLINK_WITHDRAW_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,target,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
-            : `https://kukai.api.tzkt.io/v1/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&parameter.l2_address=${encodeURIComponent(rawHexNoPrefix)}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender&sort.desc=id&limit=200`
+            ? `${TZKT_API_BASE}/operations/transactions?anyof.sender.target=${ETHERLINK_WITHDRAW_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,target,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
+            : `${TZKT_API_BASE}/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&parameter.l2_address=${encodeURIComponent(rawHexNoPrefix)}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender&sort.desc=id&limit=200`
         )
           .then((r) => (r.ok ? r.json() : []))
           .catch(() => [])
@@ -1819,7 +2461,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   // 1. Build accountInfo
   let accountInfo = existing?.accountInfo || null;
-  if (!accountInfo) {
+  if (!accountInfo && !addrFetchError) {
     const weiBal = parseFloat(addrJson?.coin_balance || '0');
     const alias =
       aliasLookup.get(evmAddress) ||
@@ -2054,7 +2696,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       });
     }
 
-    intExhausted = true;
+    intExhausted = !intV2Result?.hadError;
     let minIntBlock = Infinity;
 
     if (Array.isArray(intV2Result?.items)) {
@@ -2127,7 +2769,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           let nextCbQs = '?items_count=100';
           let stopCbScan = false;
           for (let page = 0; page < 6 && !stopCbScan; page++) {
-            const cbResp = await fetch(`${ETHERLINK_API_BASE}/addresses/${enc}/coin-balance-history${nextCbQs}`);
+            const cbResp = await blockscoutFetch(`${ETHERLINK_API_BASE}/addresses/${enc}/coin-balance-history${nextCbQs}`);
             if (!cbResp.ok) break;
             const cbJson = await cbResp.json();
             const cbItems = Array.isArray(cbJson?.items) ? cbJson.items : [];
@@ -2159,7 +2801,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           if (missingTxHashes.length > 0) {
             const recoveredLists = await Promise.all(
               missingTxHashes.slice(0, 5).map((hash) =>
-                fetch(`${ETHERLINK_API_BASE}/transactions/${hash}/internal-transactions?items_count=100`)
+                blockscoutFetch(`${ETHERLINK_API_BASE}/transactions/${hash}/internal-transactions?items_count=100`)
                   .then((r) => (r.ok ? r.json() : null))
                   .catch(() => null)
               )
@@ -2317,63 +2959,107 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     faData.sort((a, b) => (b.id || 0) - (a.id || 0));
   }
 
-  cache.set(evmAddress, {
-    txData,
-    rawTopItems: needXtzFetch ? topTxV2Result?.items || [] : existing?.rawTopItems || [],
-    rawIntItems: needXtzFetch ? intV2Result?.items || [] : existing?.rawIntItems || [],
-    topExhausted,
-    intExhausted,
-    topNextQs: needXtzFetch ? topTxV2Result?.nextQs || null : existing?.topNextQs || null,
-    intNextQs: needXtzFetch ? intV2Result?.nextQs || null : existing?.intNextQs || null,
-    topPagesFetched: needXtzFetch ? topTxV2Result?.pagesFetched || 0 : existing?.topPagesFetched || 0,
-    intPagesFetched: needXtzFetch ? intV2Result?.pagesFetched || 0 : existing?.intPagesFetched || 0,
-    specialOps: [],
-    specialOpsFetched: true,
-    internalChecked: needXtz ? true : Boolean(existing?.internalChecked),
-    l1DepositsChecked: needXtz ? true : Boolean(existing?.l1DepositsChecked),
-    limit: needXtz ? Math.max(txData.length, numLimit, existing?.limit || 0) : existing?.limit || 0,
-    lastOffset: null,
-    exhausted: needXtzFetch ? topExhausted && intExhausted : Boolean(existing?.exhausted),
-    faData,
-    faLimit: needFa ? Math.max(faData.length, numLimit, existing?.faLimit || 0) : existing?.faLimit || 0,
-    faLastOffset: null,
-    faExhausted: L2_ERC20_TOKEN_KEYS.every((k) => tokenExhaustedMap.get(k)),
-    fetchedL2Tokens,
-    tokenExhaustedMap,
-    tokenNextQsMap,
-    tokenPagesMap,
-    unfilteredTried: unfilteredAttempted,
-    unfilteredFaComplete: unfilteredFaShortCircuit,
-    accountInfo
-  });
+  const xtzHadError = Boolean(needXtzFetch && (topTxV2Result?.hadError || intV2Result?.hadError));
+  const faHadError = Boolean(needFa && (tokenTxJson?.hadError || tokBalFetchError));
+  const hadError = Boolean(xtzHadError || faHadError || addrFetchError);
+  const hasAnyData = txData.length > 0 || faData.length > 0;
+
+  const computedXtzLimit = needXtz
+    ? xtzHadError
+      ? Math.max(txData.length, existing?.limit || 0)
+      : Math.max(txData.length, numLimit, existing?.limit || 0)
+    : existing?.limit || 0;
+
+  const computedFaLimit = needFa
+    ? faHadError
+      ? Math.max(faData.length, existing?.faLimit || 0)
+      : Math.max(faData.length, numLimit, existing?.faLimit || 0)
+    : existing?.faLimit || 0;
+
+  if (hasAnyData || !hadError) {
+    cache.set(evmAddress, {
+      txData,
+      rawTopItems: needXtzFetch ? topTxV2Result?.items || [] : existing?.rawTopItems || [],
+      rawIntItems: needXtzFetch ? intV2Result?.items || [] : existing?.rawIntItems || [],
+      topExhausted,
+      intExhausted,
+      topNextQs: needXtzFetch ? topTxV2Result?.nextQs || null : existing?.topNextQs || null,
+      intNextQs: needXtzFetch ? intV2Result?.nextQs || null : existing?.intNextQs || null,
+      topNextParams: needXtzFetch ? topTxV2Result?.nextParams || null : existing?.topNextParams || null,
+      intNextParams: needXtzFetch ? intV2Result?.nextParams || null : existing?.intNextParams || null,
+      topLastMaxBlock: needXtzFetch ? topTxV2Result?.lastMaxBlock || 0 : existing?.topLastMaxBlock || 0,
+      intLastMaxBlock: needXtzFetch ? intV2Result?.lastMaxBlock || 0 : existing?.intLastMaxBlock || 0,
+      topPrefetchedSegments: needXtzFetch
+        ? topTxV2Result?.prefetchedSegments || []
+        : existing?.topPrefetchedSegments || [],
+      intPrefetchedSegments: needXtzFetch
+        ? intV2Result?.prefetchedSegments || []
+        : existing?.intPrefetchedSegments || [],
+      topPagesFetched: needXtzFetch ? topTxV2Result?.pagesFetched || 0 : existing?.topPagesFetched || 0,
+      intPagesFetched: needXtzFetch ? intV2Result?.pagesFetched || 0 : existing?.intPagesFetched || 0,
+      specialOps: [],
+      specialOpsFetched: true,
+      internalChecked: needXtz && !xtzHadError ? true : Boolean(existing?.internalChecked),
+      l1DepositsChecked: needXtz ? true : Boolean(existing?.l1DepositsChecked),
+      limit: computedXtzLimit,
+      lastOffset: null,
+      exhausted: needXtzFetch ? topExhausted && intExhausted : Boolean(existing?.exhausted),
+      faData,
+      faLimit: computedFaLimit,
+      faLastOffset: null,
+      faExhausted: L2_ERC20_TOKEN_KEYS.every((k) => tokenExhaustedMap.get(k)),
+      fetchedL2Tokens,
+      tokenExhaustedMap,
+      tokenNextQsMap,
+      tokenNextParamsMap,
+      tokenMaxBlockMap,
+      tokenSegmentsMap,
+      tokenPagesMap,
+      tokenItemsMap,
+      unfilteredTried: unfilteredAttempted,
+      unfilteredFaComplete: unfilteredFaShortCircuit,
+      accountInfo
+    });
+  }
 
   return {
     operations: needXtz ? txData.slice(0, numLimit) : [],
     faTransfers: needFa ? sliceL2FaTransfersByDepth(faData, numLimit) : [],
-    accountInfo
+    accountInfo,
+    apiError: hadError
+      ? lastBlockscoutApiError ||
+        lastTzktApiError || { source: 'Blockscout', status: 0, category: 'network', isNetworkError: true }
+      : null
   };
 }
 
-async function fetchFaTransfersBatch(tezosAddress, lastId = 0, batchLimit = 10000) {
+async function fetchFaTransfersBatch(tezosAddress, lastId = 0, batchLimit = 10000, offset = 0) {
   const clampLimit = Math.min(10000, Math.max(1, Number(batchLimit) || 10000));
-  const baseUrl = `https://kukai.api.tzkt.io/v1/tokens/transfers?anyof.from.to=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&amount.gt=0&sort.desc=id&select=id,timestamp,token.contract.address,from,to,amount,transactionId&limit=${clampLimit}`;
-  const url = lastId > 0 ? `${baseUrl}&offset.cr=${lastId}` : baseUrl;
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`TzKT HTTP ${response.status}`);
-      return await response.json();
-    } catch (err) {
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 600));
-      } else {
-        console.error('Error fetching FA token transfers batch:', err);
-        return null;
-      }
-    }
+  const baseUrl = `${TZKT_API_BASE}/tokens/transfers?anyof.from.to=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&amount.gt=0&sort.desc=id&select=id,timestamp,token.contract.address,from,to,amount,transactionId&limit=${clampLimit}`;
+  let url = baseUrl;
+  if (lastId > 0) {
+    url += offset > 0 ? `&id.lt=${lastId}&offset=${offset}` : `&offset.cr=${lastId}`;
+  } else if (offset > 0) {
+    url += `&offset=${offset}`;
   }
-  return null;
+
+  try {
+    const response = await tzktFetch(url);
+    if (!response.ok) {
+      const errType =
+        response.status >= 500
+          ? '5xx Server Error'
+          : response.status === 429
+          ? '429 Rate Limit'
+          : '4xx Client Error';
+      console.error(`TzKT ${errType} (HTTP ${response.status}) fetching FA token transfers batch`);
+      return null;
+    }
+    return await response.json();
+  } catch (err) {
+    console.error('Network error fetching FA token transfers batch:', err);
+    return null;
+  }
 }
 
 async function resolveTxRefsToHashes(refs) {
@@ -2392,26 +3078,32 @@ async function resolveTxRefsToHashes(refs) {
   if (unresolvedIds.length > 0) {
     const uniqueIds = Array.from(new Set(unresolvedIds));
     const chunkSize = 80;
+    const chunks = [];
     for (let i = 0; i < uniqueIds.length; i += chunkSize) {
-      const chunk = uniqueIds.slice(i, i + chunkSize);
-      try {
-        const res = await fetch(
-          `https://kukai.api.tzkt.io/v1/operations/transactions?id.in=${chunk.join(',')}&select=id,hash&limit=${chunk.length}`
-        );
-        if (res.ok) {
-          const rows = await res.json();
-          if (Array.isArray(rows)) {
-            rows.forEach((row) => {
-              if (row.id && row.hash) {
-                txIdToHashCache.set(Number(row.id), row.hash);
-              }
-            });
-          }
-        }
-      } catch (err) {
-        console.error('Error resolving transactionIds to hashes:', err);
-      }
+      chunks.push(uniqueIds.slice(i, i + chunkSize));
     }
+
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        try {
+          const res = await tzktFetch(
+            `${TZKT_API_BASE}/operations/transactions?id.in=${chunk.join(',')}&select=id,hash&limit=${chunk.length}`
+          );
+          if (res.ok) {
+            const rows = await res.json();
+            if (Array.isArray(rows)) {
+              rows.forEach((row) => {
+                if (row.id && row.hash) {
+                  txIdToHashCache.set(Number(row.id), row.hash);
+                }
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Error resolving transactionIds to hashes:', err);
+        }
+      })
+    );
   }
 
   const out = [];
@@ -2461,7 +3153,8 @@ async function fetchAllData(tezosAddress, requestedLimit) {
       return {
         operations: needXtz ? [...cached.txData.slice(0, numLimit), ...(cached.specialOps || [])] : [],
         faTransfers: needFa ? (cached.faData || []).slice(0, numLimit) : [],
-        accountInfo: cached.accountInfo
+        accountInfo: cached.accountInfo,
+        apiError: null
       };
     }
   }
@@ -2477,18 +3170,24 @@ async function fetchAllData(tezosAddress, requestedLimit) {
   if (statsStrip) statsStrip.style.display = 'none';
   if (loaderEl) loaderEl.style.display = 'flex';
 
+  lastTzktApiError = null;
+
   const existing = cache.get(tezosAddress);
   const txData = existing ? [...existing.txData] : [];
+  const seenXtzIds = new Set(txData.map((op) => Number(op.id)).filter(Boolean));
   let lastOffset = existing ? existing.lastOffset : 0;
   let counter = txData.length;
   let exhausted = existing ? Boolean(existing.exhausted) : false;
   let xtzLimit = existing?.limit || 0;
+  let xtzHadError = false;
 
   const faData = existing?.faData ? [...existing.faData] : [];
+  const seenFaIds = new Set(faData.map((tr) => Number(tr.id)).filter(Boolean));
   let faLastOffset = existing?.faLastOffset || 0;
   let faCounter = faData.length;
   let faExhausted = existing ? Boolean(existing.faExhausted) : false;
   let faLimit = existing?.faLimit || 0;
+  let faHadError = false;
 
   const accountPromise = (async () => {
     if (existing?.accountInfo) {
@@ -2518,89 +3217,206 @@ async function fetchAllData(tezosAddress, requestedLimit) {
           return ops;
         });
 
-  if (needXtz) {
-    while (!exhausted && counter < numLimit) {
-      const remaining = numLimit - counter;
-      const batchSize = Math.min(10000, Math.max(1000, remaining));
+  const xtzFetchPromise = (async () => {
+    if (!needXtz) return;
 
+    const accInfo = numLimit - counter > 10000 ? await accountPromise : existing?.accountInfo || null;
+    if (accInfo && Number(accInfo.numTransactions) === 0) {
+      exhausted = true;
+    }
+
+    while (!exhausted && !xtzHadError && counter < numLimit) {
+      const remaining = numLimit - counter;
+      const maxAccountRemaining =
+        accInfo && typeof accInfo.numTransactions === 'number'
+          ? Math.max(1000, Number(accInfo.numTransactions) - counter)
+          : remaining;
+      const effectiveRemaining = Math.min(remaining, maxAccountRemaining);
+      const waveCount = Math.min(
+        TZKT_MAX_REQUESTS_PER_SECOND,
+        Math.max(1, Math.ceil(effectiveRemaining / 10000)),
+        Math.max(1, Math.ceil(remaining / 10000))
+      );
+
+      const anchorId = lastOffset;
+      let waveLoadedCount = counter;
       if (loaderStatus) {
         loaderStatus.textContent = `Fetching XTZ transactions from TzKT… ${counter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
       }
 
-      const batch = await fetchOperationsBatch(tezosAddress, lastOffset, batchSize);
-      if (!batch || !Array.isArray(batch) || batch.length === 0) {
-        exhausted = true;
-        break;
+      const waveSpecs = [];
+      for (let i = 0; i < waveCount; i++) {
+        const pageOffset = i * 10000;
+        const pageLimit = Math.min(10000, Math.max(1000, remaining - pageOffset));
+        waveSpecs.push({ pageOffset, pageLimit });
       }
 
-      for (let i = 0; i < batch.length; i++) {
-        const op = batch[i];
-        if (op.id && op.hash) {
-          txIdToHashCache.set(Number(op.id), op.hash);
+      const waveBatches = await Promise.all(
+        waveSpecs.map(({ pageOffset, pageLimit }) =>
+          fetchOperationsBatch(tezosAddress, anchorId, pageLimit, pageOffset).then((batch) => {
+            if (Array.isArray(batch) && batch.length > 0 && loaderStatus) {
+              waveLoadedCount = Math.min(numLimit, waveLoadedCount + batch.length);
+              loaderStatus.textContent = `Fetching XTZ transactions from TzKT… ${waveLoadedCount.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
+            }
+            return { batch, pageLimit };
+          })
+        )
+      );
+
+      for (let i = 0; i < waveBatches.length; i++) {
+        const { batch, pageLimit } = waveBatches[i];
+        if (batch === null || !Array.isArray(batch)) {
+          // API or network failure: stop pagination without marking address history as exhausted
+          xtzHadError = true;
+          break;
         }
-        txData.push(op);
-      }
-      lastOffset = batch[batch.length - 1].id;
-      counter = txData.length;
+        if (batch.length === 0) {
+          exhausted = true;
+          break;
+        }
 
-      if (batch.length < batchSize) {
-        exhausted = true;
-        break;
+        for (let j = 0; j < batch.length; j++) {
+          const op = batch[j];
+          const idNum = Number(op.id);
+          if (idNum && op.hash) {
+            txIdToHashCache.set(idNum, op.hash);
+          }
+          if (!idNum || !seenXtzIds.has(idNum)) {
+            if (idNum) seenXtzIds.add(idNum);
+            txData.push(op);
+          }
+        }
+        lastOffset = batch[batch.length - 1].id;
+        counter = txData.length;
+
+        if (batch.length < pageLimit) {
+          exhausted = true;
+          break;
+        }
       }
     }
+
     await enrichBridgeDepositParameters(txData);
-    xtzLimit = Math.max(counter, existing?.limit || 0, numLimit);
-  }
+    xtzLimit = xtzHadError
+      ? Math.max(counter, existing?.limit || 0)
+      : Math.max(counter, existing?.limit || 0, numLimit);
+  })();
 
-  if (needFa) {
-    while (!faExhausted && faCounter < numLimit) {
+  const faFetchPromise = (async () => {
+    if (!needFa) return;
+
+    const accInfo = numLimit - faCounter > 10000 ? await accountPromise : existing?.accountInfo || null;
+    if (accInfo && Number(accInfo.tokenTransfersCount) === 0) {
+      faExhausted = true;
+    }
+
+    while (!faExhausted && !faHadError && faCounter < numLimit) {
       const remaining = numLimit - faCounter;
-      const batchSize = Math.min(10000, Math.max(1000, remaining));
+      const maxFaRemaining =
+        accInfo && typeof accInfo.tokenTransfersCount === 'number'
+          ? Math.max(1000, Number(accInfo.tokenTransfersCount) - faCounter)
+          : remaining;
+      const effectiveRemaining = Math.min(remaining, maxFaRemaining);
+      const waveCount = Math.min(
+        TZKT_MAX_REQUESTS_PER_SECOND,
+        Math.max(1, Math.ceil(effectiveRemaining / 10000)),
+        Math.max(1, Math.ceil(remaining / 10000))
+      );
 
-      if (loaderStatus) {
+      const anchorId = faLastOffset;
+      let waveLoadedCount = faCounter;
+      if (loaderStatus && !needXtz) {
         loaderStatus.textContent = `Fetching FA token transfers… ${faCounter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
       }
 
-      const batch = await fetchFaTransfersBatch(tezosAddress, faLastOffset, batchSize);
-      if (!batch || !Array.isArray(batch) || batch.length === 0) {
-        faExhausted = true;
-        break;
+      const waveSpecs = [];
+      for (let i = 0; i < waveCount; i++) {
+        const pageOffset = i * 10000;
+        const pageLimit = Math.min(10000, Math.max(1000, remaining - pageOffset));
+        waveSpecs.push({ pageOffset, pageLimit });
       }
 
-      for (let i = 0; i < batch.length; i++) {
-        faData.push(batch[i]);
-      }
-      faLastOffset = batch[batch.length - 1].id;
-      faCounter = faData.length;
+      const waveBatches = await Promise.all(
+        waveSpecs.map(({ pageOffset, pageLimit }) =>
+          fetchFaTransfersBatch(tezosAddress, anchorId, pageLimit, pageOffset).then((batch) => {
+            if (Array.isArray(batch) && batch.length > 0 && loaderStatus) {
+              waveLoadedCount = Math.min(numLimit, waveLoadedCount + batch.length);
+              loaderStatus.textContent = `Fetching FA token transfers… ${waveLoadedCount.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
+            }
+            return { batch, pageLimit };
+          })
+        )
+      );
 
-      if (batch.length < batchSize) {
-        faExhausted = true;
-        break;
+      for (let i = 0; i < waveBatches.length; i++) {
+        const { batch, pageLimit } = waveBatches[i];
+        if (batch === null || !Array.isArray(batch)) {
+          // API or network failure: stop pagination without marking FA history as exhausted
+          faHadError = true;
+          break;
+        }
+        if (batch.length === 0) {
+          faExhausted = true;
+          break;
+        }
+
+        for (let j = 0; j < batch.length; j++) {
+          const tr = batch[j];
+          const idNum = Number(tr.id);
+          if (!idNum || !seenFaIds.has(idNum)) {
+            if (idNum) seenFaIds.add(idNum);
+            faData.push(tr);
+          }
+        }
+        faLastOffset = batch[batch.length - 1].id;
+        faCounter = faData.length;
+
+        if (batch.length < pageLimit) {
+          faExhausted = true;
+          break;
+        }
       }
     }
-    faLimit = Math.max(faCounter, numLimit);
+
+    faLimit = faHadError
+      ? Math.max(faCounter, existing?.faLimit || 0)
+      : Math.max(faCounter, existing?.faLimit || 0, numLimit);
+  })();
+
+  const [accountInfo, specialOps] = await Promise.all([
+    accountPromise,
+    specialOpsPromise,
+    xtzFetchPromise,
+    faFetchPromise
+  ]);
+
+  const hasAnyData = txData.length > 0 || faData.length > 0 || (specialOps && specialOps.length > 0);
+  const hadError = xtzHadError || faHadError;
+
+  // Avoid poisoning session cache when a request completely fails with 0 data
+  if (hasAnyData || !hadError) {
+    cache.set(tezosAddress, {
+      txData,
+      specialOps,
+      specialOpsFetched: xtzHadError ? Boolean(existing?.specialOpsFetched) : specialOpsFetched,
+      limit: xtzLimit,
+      lastOffset,
+      exhausted,
+      faData,
+      faLimit,
+      faLastOffset,
+      faExhausted,
+      accountInfo
+    });
   }
-
-  const [accountInfo, specialOps] = await Promise.all([accountPromise, specialOpsPromise]);
-
-  cache.set(tezosAddress, {
-    txData,
-    specialOps,
-    specialOpsFetched,
-    limit: xtzLimit,
-    lastOffset,
-    exhausted,
-    faData,
-    faLimit,
-    faLastOffset,
-    faExhausted,
-    accountInfo
-  });
 
   return {
     operations: needXtz ? [...txData.slice(0, numLimit), ...specialOps] : [],
     faTransfers: needFa ? faData.slice(0, numLimit) : [],
-    accountInfo
+    accountInfo,
+    apiError: hadError
+      ? lastTzktApiError || { status: 0, category: 'network', isNetworkError: true }
+      : null
   };
 }
 
@@ -3036,10 +3852,33 @@ async function generateDataAndDrawDiagram(tezosAddress, limit) {
 
   const hasXtzOps = result?.operations && result.operations.length > 0;
   const hasFaOps = result?.faTransfers && result.faTransfers.length > 0;
+  const apiError = result?.apiError || null;
 
   if (!result || (!hasXtzOps && !hasFaOps)) {
-    showNotification('No operations found for this address');
     const emptyState = document.getElementById('empty-state');
+    if (apiError) {
+      const status = apiError.status;
+      const indexerName = apiError.source || (isEtherlinkAddress(tezosAddress) ? 'Blockscout' : 'TzKT');
+      if (apiError.isClientError) {
+        showNotification(`Invalid address or bad request (${indexerName} HTTP ${status})`);
+        if (emptyState) {
+          emptyState.style.display = 'block';
+          emptyState.querySelector('h2').textContent = `Invalid Request (HTTP ${status})`;
+          emptyState.querySelector('p').textContent = `"${tezosAddress}" was rejected by the ${indexerName} indexer (HTTP ${status}). Verify that the Tezos (tz1/tz2/tz3/tz4/KT1) or Etherlink (0x) address is valid.`;
+        }
+      } else {
+        const statusLabel = status === 429 ? 'HTTP 429 Rate Limit' : status ? `HTTP ${status}` : 'Network Error';
+        showNotification(`${indexerName} indexer error (${statusLabel}) — please try again`);
+        if (emptyState) {
+          emptyState.style.display = 'block';
+          emptyState.querySelector('h2').textContent = `${indexerName} Indexer Unavailable (${statusLabel})`;
+          emptyState.querySelector('p').textContent = `The ${indexerName} API encountered a temporary server or network error (${statusLabel}) after automatic retries. Click Analyze to try again.`;
+        }
+      }
+      return;
+    }
+
+    showNotification('No operations found for this address');
     if (emptyState) {
       emptyState.style.display = 'block';
       emptyState.querySelector('h2').textContent = 'No Value Flows Found';
@@ -3048,6 +3887,12 @@ async function generateDataAndDrawDiagram(tezosAddress, limit) {
         : `No applied XTZ operations were found for "${tezosAddress}". Try enabling the FA Tokens switch (tzBTC / USDt) or check another address.`;
     }
     return;
+  }
+
+  if (apiError) {
+    const indexerName = apiError.source || (isEtherlinkAddress(tezosAddress) ? 'Blockscout' : 'TzKT');
+    const statusLabel = apiError.status ? `HTTP ${apiError.status}` : 'Network Error';
+    showNotification(`${indexerName} API error (${statusLabel}) — showing partial flow data`);
   }
 
   currentRawData = result.operations || [];
@@ -4378,7 +5223,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   const hubTitle = truncateText(hubRawAlias || shortenAddress(targetAddress), 22);
   const hubShortAddr = shortenAddress(targetAddress);
   const hubInitial = (hubRawAlias || (isL2Hub ? 'E' : targetAddress) || 'T').replace(/^~/, '').charAt(0).toUpperCase();
-  const hubAvatarUrl = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(targetAddress)}`;
+  const hubAvatarUrl = `${TZKT_AVATARS_BASE}/${encodeURIComponent(targetAddress)}`;
   const hubMidX = hubX + hubW / 2;
   const contentTopY = hubCenterY - 96 - Math.floor(extraHubRowsH / 2);
   const avatarCy = contentTopY + 46;
@@ -4912,7 +5757,7 @@ function bindSankeyInteractions(
     const isL2 = isEtherlinkAddress(targetAddress);
     const avatarUrl = isL2
       ? 'icons/tezos.png'
-      : `https://services.tzkt.io/v1/avatars/${encodeURIComponent(targetAddress)}`;
+      : `${TZKT_AVATARS_BASE}/${encodeURIComponent(targetAddress)}`;
 
     const activeTokens = ALL_TOKEN_ORDER.filter((tk) => viewConfig.enabledTokens.has(tk));
     const tokenRowsHtml = activeTokens
@@ -5219,7 +6064,7 @@ async function openInspectorDrawer(entry, side) {
   if (entry.realAddress.startsWith('~') || isEtherlinkAddress(entry.realAddress)) {
     avatar.src = 'icons/tezos.png';
   } else {
-    avatar.src = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(entry.realAddress)}`;
+    avatar.src = `${TZKT_AVATARS_BASE}/${encodeURIComponent(entry.realAddress)}`;
   }
 
   const volParts = [
