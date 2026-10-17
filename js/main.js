@@ -1,6 +1,6 @@
 // ============================================================================
-// The Eye of Chad — Modern Tezos Flow & Sankey Explorer
-// Pure HTML + CSS + Vanilla JS (Zero external chart library dependencies)
+// The Eye of Chad — Modern Tezos Flow & Sankey Explorer (Unified Multi-Ribbon Node Edition)
+// Single node per counterparty address with multiple color-coded token ribbons
 // ============================================================================
 
 const input = document.getElementById('target-address');
@@ -8,13 +8,98 @@ const dropdown = document.createElement('div');
 dropdown.className = 'address-dropdown';
 
 // Session state & cache
-const cache = new Map(); // Map<address, { data, limit, lastOffset, exhausted, accountInfo }>
+const cache = new Map(); // Map<address, { txData, specialOps, limit, lastOffset, exhausted, faData, faLimit, faLastOffset, faExhausted, accountInfo }>
+const txIdToHashCache = new Map(); // Map<number, string> for resolving TzKT token transfer transactionId -> opHash
 let history = [];
 let historyIndex = -1;
+
+// Supported Token Definitions (Native XTZ + Tracked FA1.2 / FA2 Tokens)
+const TOKEN_DEFINITIONS = {
+  xtz: {
+    key: 'xtz',
+    symbol: 'ꜩ',
+    ticker: 'XTZ',
+    name: 'Tezos (XTZ)',
+    contract: null,
+    tokenId: null,
+    decimals: 6,
+    isNative: true,
+    tezEquivalentRate: 1,
+    inflowColor: '#10b981',
+    inflowLight: '#34d399',
+    outflowColor: '#f43f5e',
+    outflowLight: '#fb7185',
+    returnColor: '#ec4899',
+    returnTextColor: '#f472b6',
+    cardBorder: 'rgba(255, 255, 255, 0.1)',
+    badgeBg: 'rgba(16, 185, 129, 0.18)',
+    badgeStroke: 'rgba(16, 185, 129, 0.45)',
+    badgeText: '#6ee7b7',
+    gradInflow: 'url(#grad-inflow)',
+    gradOutflow: 'url(#grad-outflow)',
+    gradCircular: 'url(#grad-circular)'
+  },
+  tzbtc: {
+    key: 'tzbtc',
+    symbol: 'tzBTC',
+    ticker: 'tzBTC',
+    name: 'tzBTC',
+    contract: 'KT1PWx2mnDueood7fEmfbBDKx1D9BAnnXitn',
+    tokenId: '0',
+    decimals: 8,
+    isNative: false,
+    tezEquivalentRate: 85000,
+    inflowColor: '#f7931a',
+    inflowLight: '#fbbf24',
+    outflowColor: '#f7931a',
+    outflowLight: '#fb923c',
+    returnColor: '#f59e0b',
+    returnTextColor: '#fde047',
+    cardBorder: 'rgba(247, 147, 26, 0.42)',
+    badgeBg: 'rgba(247, 147, 26, 0.2)',
+    badgeStroke: 'rgba(251, 191, 36, 0.55)',
+    badgeText: '#fbbf24',
+    gradInflow: 'url(#grad-inflow-tzbtc)',
+    gradOutflow: 'url(#grad-outflow-tzbtc)',
+    gradCircular: 'url(#grad-circular-tzbtc)'
+  },
+  usdt: {
+    key: 'usdt',
+    symbol: 'USDt',
+    ticker: 'USDt',
+    name: 'Tether USD (USDt)',
+    contract: 'KT1XnTn74bUtxHfDtBmm2bGZAQfhPbvKWR8o',
+    tokenId: '0',
+    decimals: 6,
+    isNative: false,
+    tezEquivalentRate: 1.25,
+    inflowColor: '#06b6d4',
+    inflowLight: '#22d3ee',
+    outflowColor: '#06b6d4',
+    outflowLight: '#38bdf8',
+    returnColor: '#0ea5e9',
+    returnTextColor: '#67e8f9',
+    cardBorder: 'rgba(34, 211, 238, 0.42)',
+    badgeBg: 'rgba(6, 182, 212, 0.2)',
+    badgeStroke: 'rgba(34, 211, 238, 0.55)',
+    badgeText: '#22d3ee',
+    gradInflow: 'url(#grad-inflow-usdt)',
+    gradOutflow: 'url(#grad-outflow-usdt)',
+    gradCircular: 'url(#grad-circular-usdt)'
+  }
+};
+
+const ALL_TOKEN_ORDER = ['xtz', 'tzbtc', 'usdt'];
+const FA_TOKEN_KEYS = ['tzbtc', 'usdt'];
+const FA_CONTRACT_LIST = FA_TOKEN_KEYS.map((k) => TOKEN_DEFINITIONS[k].contract).join(',');
+const CONTRACT_TO_TOKEN_KEY = new Map(
+  FA_TOKEN_KEYS.map((k) => [TOKEN_DEFINITIONS[k].contract, k])
+);
 
 // Active diagram state (allows instant re-rendering on filter/scale/sort changes)
 let currentAddress = '';
 let currentRawData = [];
+let currentFaData = [];
 let currentAccountInfo = null;
 let currentParsed = null;
 
@@ -24,6 +109,8 @@ let viewConfig = {
   maxNodes: 50,         // 25 | 50 | 100 | 9999
   sortMode: 'amount',   // 'amount' | 'count' | 'recent'
   circularFlows: true,  // true = Circular Loopbacks (↺), false = Split (⇄)
+  faEnabled: false,     // default false = only XTZ flows
+  enabledTokens: new Set(['xtz']),
   searchQuery: '',
   fullHeight: true
 };
@@ -43,6 +130,10 @@ function formatTez(amount, compact = false) {
     if (abs >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M ꜩ`;
     if (abs >= 10_000) return `${(amount / 1_000).toFixed(1)}K ꜩ`;
     if (abs >= 1_000) return `${(amount / 1_000).toFixed(2)}K ꜩ`;
+    if (abs >= 100) return `${amount.toLocaleString('en-US', { maximumFractionDigits: 1 })} ꜩ`;
+    if (abs >= 0.01) return `${amount.toLocaleString('en-US', { minimumFractionDigits: abs >= 1 ? 2 : 0, maximumFractionDigits: 2 })} ꜩ`;
+    if (abs > 0) return `${amount < 0 ? '-' : ''}<0.01 ꜩ`;
+    return '0 ꜩ';
   }
   if (abs >= 100) {
     return `${amount.toLocaleString('en-US', { maximumFractionDigits: 1 })} ꜩ`;
@@ -53,11 +144,72 @@ function formatTez(amount, compact = false) {
   return `${amount.toLocaleString('en-US', { maximumFractionDigits: 4 })} ꜩ`;
 }
 
+function formatTokenAmount(amount, tokenKey = 'xtz', compact = false) {
+  if (!tokenKey || tokenKey === 'xtz') {
+    return formatTez(amount, compact);
+  }
+  const def = TOKEN_DEFINITIONS[tokenKey] || TOKEN_DEFINITIONS.xtz;
+  const sym = def.symbol;
+  if (amount === undefined || amount === null || isNaN(amount)) return `0 ${sym}`;
+  const abs = Math.abs(amount);
+
+  if (tokenKey === 'tzbtc') {
+    if (compact) {
+      if (abs >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M ${sym}`;
+      if (abs >= 1_000) return `${(amount / 1_000).toFixed(2)}K ${sym}`;
+      if (abs >= 100) return `${amount.toLocaleString('en-US', { maximumFractionDigits: 1 })} ${sym}`;
+      if (abs >= 1) return `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${sym}`;
+      if (abs >= 0.01) return `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ${sym}`;
+      if (abs >= 0.0001) return `${amount.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${sym}`;
+      if (abs > 0) return `${amount < 0 ? '-' : ''}<0.0001 ${sym}`;
+      return `0 ${sym}`;
+    }
+    if (abs >= 100) {
+      return `${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${sym}`;
+    }
+    if (abs >= 1) {
+      return `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} ${sym}`;
+    }
+    if (abs >= 0.01) {
+      return `${amount.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 6 })} ${sym}`;
+    }
+    if (abs >= 0.0001) {
+      return `${amount.toLocaleString('en-US', { maximumFractionDigits: 6 })} ${sym}`;
+    }
+    return `${amount.toLocaleString('en-US', { maximumFractionDigits: 8 })} ${sym}`;
+  }
+
+  // Default FA formatting (e.g. USDt with 6 decimals)
+  if (compact) {
+    if (abs >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M ${sym}`;
+    if (abs >= 10_000) return `${(amount / 1_000).toFixed(1)}K ${sym}`;
+    if (abs >= 1_000) return `${(amount / 1_000).toFixed(2)}K ${sym}`;
+    if (abs >= 100) return `${amount.toLocaleString('en-US', { maximumFractionDigits: 1 })} ${sym}`;
+    if (abs >= 0.01) return `${amount.toLocaleString('en-US', { minimumFractionDigits: abs >= 1 ? 2 : 0, maximumFractionDigits: 2 })} ${sym}`;
+    if (abs > 0) return `${amount < 0 ? '-' : ''}<0.01 ${sym}`;
+    return `0 ${sym}`;
+  }
+  if (abs >= 100) {
+    return `${amount.toLocaleString('en-US', { maximumFractionDigits: 1 })} ${sym}`;
+  }
+  if (abs >= 1) {
+    return `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${sym}`;
+  }
+  return `${amount.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${sym}`;
+}
+
 function shortenAddress(addr) {
   if (!addr) return '';
   if (addr.startsWith('~')) return addr;
   if (addr.length <= 16) return addr;
   return `${addr.slice(0, 7)}…${addr.slice(-5)}`;
+}
+
+function compactAddress(addr) {
+  if (!addr) return '';
+  if (addr.startsWith('~')) return addr;
+  if (addr.length <= 12) return addr;
+  return `${addr.slice(0, 5)}…${addr.slice(-4)}`;
 }
 
 function truncateText(str, maxLen = 24) {
@@ -316,7 +468,7 @@ tezLimitSlider.addEventListener('input', function () {
   updateSliderTrack(this);
   syncDustChips(this.value);
   updateLocationHash();
-  if (currentAddress && currentRawData.length > 0) {
+  if (currentAddress && (currentRawData.length > 0 || currentFaData.length > 0)) {
     refreshDiagramFromMemory();
   }
 });
@@ -359,7 +511,7 @@ document.querySelectorAll('.dust-chip').forEach((chip) => {
     updateSliderTrack(tezLimitSlider);
     syncDustChips(tez);
     updateLocationHash();
-    if (currentAddress && currentRawData.length > 0) {
+    if (currentAddress && (currentRawData.length > 0 || currentFaData.length > 0)) {
       refreshDiagramFromMemory();
     } else if (input.value.trim()) {
       go();
@@ -367,7 +519,7 @@ document.querySelectorAll('.dust-chip').forEach((chip) => {
   });
 });
 
-// Toolbar controls: Ribbon Scale, Max Nodes, Sort Mode, Search Filter, Full Height, Export PNG
+// Toolbar controls: Ribbon Scale, Max Nodes, Sort Mode, Search Filter, FA Tokens Switch, Export PNG
 document.querySelectorAll('#scale-mode-control .seg-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#scale-mode-control .seg-btn').forEach((b) => b.classList.remove('active'));
@@ -408,13 +560,92 @@ document.querySelectorAll('#circular-mode-control .seg-btn').forEach((btn) => {
       if (viewConfig.circularFlows) {
         showNotification(
           totalLoops > 0
-            ? `Circular Flows (↺): Looping ${totalLoops} flow${totalLoops > 1 ? 's' : ''} (${biCount} return, ${selfCount} self)`
+            ? `Circular Flows (↺): Looping ${totalLoops} counterparty flow${totalLoops > 1 ? 's' : ''} (${biCount} return, ${selfCount} self)`
             : 'Circular Flows (↺) enabled (0 circular or self-transfer flows here)'
         );
       } else {
         showNotification('Split Flows (⇄): Showing inflows on left and outflows on right');
       }
     }
+  });
+});
+
+// FA Tokens Switch & Individual Token Pills (XTZ, tzBTC, USDt)
+const faTokensToggle = document.getElementById('fa-tokens-toggle');
+const faTokensControl = document.getElementById('fa-tokens-control');
+
+function syncTokenControlsUI() {
+  if (faTokensToggle) {
+    faTokensToggle.checked = viewConfig.faEnabled;
+  }
+  if (faTokensControl) {
+    faTokensControl.classList.toggle('fa-active', viewConfig.faEnabled);
+  }
+  document.querySelectorAll('#fa-token-pills .token-pill').forEach((pill) => {
+    const tk = pill.dataset.token;
+    pill.classList.toggle('active', viewConfig.enabledTokens.has(tk));
+  });
+}
+
+async function onTokenSelectionChanged() {
+  const addr = currentAddress || input.value.trim();
+  if (!addr) return;
+  const limit = Number(resultLimitSlider.value) || 10000;
+  const cached = cache.get(addr);
+
+  if (viewConfig.faEnabled && (!cached || (!cached.faExhausted && (cached.faLimit || 0) < limit))) {
+    await generateDataAndDrawDiagram(addr, limit);
+  } else if (currentAddress) {
+    if (cached) {
+      currentFaData = (cached.faData || []).slice(0, limit);
+    }
+    refreshDiagramFromMemory();
+  }
+}
+
+faTokensToggle?.addEventListener('change', function () {
+  if (this.checked) {
+    viewConfig.faEnabled = true;
+    viewConfig.enabledTokens.add('tzbtc');
+    viewConfig.enabledTokens.add('usdt');
+    syncTokenControlsUI();
+    updateLocationHash();
+    showNotification('FA Tokens enabled: Combining XTZ, tzBTC & USDt ribbons per counterparty node');
+  } else {
+    viewConfig.faEnabled = false;
+    viewConfig.enabledTokens = new Set(['xtz']);
+    syncTokenControlsUI();
+    updateLocationHash();
+    showNotification('FA Tokens disabled: Displaying XTZ flows only');
+  }
+  onTokenSelectionChanged();
+});
+
+document.querySelectorAll('#fa-token-pills .token-pill').forEach((pill) => {
+  pill.addEventListener('click', () => {
+    const tk = pill.dataset.token;
+    if (!tk) return;
+
+    if (viewConfig.enabledTokens.has(tk)) {
+      if (viewConfig.enabledTokens.size <= 1) {
+        showNotification('At least one token flow must remain enabled');
+        return;
+      }
+      viewConfig.enabledTokens.delete(tk);
+      const anyFaActive = FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
+      viewConfig.faEnabled = anyFaActive;
+    } else {
+      viewConfig.enabledTokens.add(tk);
+      if (FA_TOKEN_KEYS.includes(tk)) {
+        viewConfig.faEnabled = true;
+      }
+    }
+
+    syncTokenControlsUI();
+    updateLocationHash();
+    const activeLabels = [...viewConfig.enabledTokens].map((k) => TOKEN_DEFINITIONS[k]?.ticker || k).join(' + ');
+    showNotification(`Active token flows: ${activeLabels}`);
+    onTokenSelectionChanged();
   });
 });
 
@@ -433,16 +664,20 @@ document.getElementById('export-png-btn')?.addEventListener('click', () => {
   exportDiagramAsPng();
 });
 
-// Update URL hash in exact backwards-compatible format: #address,resultLimit,tezLimit
+// Update URL hash in backwards-compatible format: #address,resultLimit,tezLimit[,tokens]
 function updateLocationHash() {
   const tezosAddress = input.value.trim();
   const resultLimitValue = resultLimitSlider.value;
   const tezLimitValue = tezLimitSlider.value;
   if (tezosAddress) {
+    const isDefaultXtzOnly =
+      !viewConfig.faEnabled && viewConfig.enabledTokens.size === 1 && viewConfig.enabledTokens.has('xtz');
+    const tokenPart = isDefaultXtzOnly ? '' : `,${[...viewConfig.enabledTokens].join('+')}`;
+    const newHash = `${tezosAddress},${resultLimitValue},${tezLimitValue}${tokenPart}`;
     if (window.history && window.history.replaceState) {
-      window.history.replaceState(null, '', `#${tezosAddress},${resultLimitValue},${tezLimitValue}`);
+      window.history.replaceState(null, '', `#${newHash}`);
     } else {
-      location.hash = `${tezosAddress},${resultLimitValue},${tezLimitValue}`;
+      location.hash = newHash;
     }
   }
 }
@@ -450,7 +685,7 @@ function updateLocationHash() {
 function applyHashFromUrl() {
   const hash = location.hash.slice(1);
   if (!hash) return;
-  const [address, resultLimitValue, tezLimitValue] = hash.split(',');
+  const [address, resultLimitValue, tezLimitValue, tokensParam] = hash.split(',');
   if (address) {
     input.value = decodeURIComponent(address.trim());
   }
@@ -465,6 +700,17 @@ function applyHashFromUrl() {
     updateSliderTrack(tezLimitSlider);
     syncDustChips(tezLimitValue);
   }
+  if (tokensParam) {
+    const parsedTokens = tokensParam
+      .toLowerCase()
+      .split('+')
+      .filter((k) => Boolean(TOKEN_DEFINITIONS[k]));
+    if (parsedTokens.length > 0) {
+      viewConfig.enabledTokens = new Set(parsedTokens);
+      viewConfig.faEnabled = FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
+      syncTokenControlsUI();
+    }
+  }
   if (address && address.trim() !== currentAddress) {
     go();
   }
@@ -474,6 +720,7 @@ function applyHashFromUrl() {
 window.addEventListener('DOMContentLoaded', () => {
   updateSliderTrack(resultLimitSlider);
   updateSliderTrack(tezLimitSlider);
+  syncTokenControlsUI();
   updateNavigationButtons();
   applyHashFromUrl();
 });
@@ -494,9 +741,28 @@ window.addEventListener('resize', () => {
 
 async function fetchAccountMetadata(tezosAddress) {
   try {
-    const res = await fetch(`https://api.tzkt.io/v1/accounts/${encodeURIComponent(tezosAddress)}?select=alias,balance`);
-    if (!res.ok) return null;
-    return await res.json();
+    const [accRes, balRes] = await Promise.all([
+      fetch(`https://api.tzkt.io/v1/accounts/${encodeURIComponent(tezosAddress)}?select=alias,balance`),
+      fetch(
+        `https://api.tzkt.io/v1/tokens/balances?account=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&select=token,balance`
+      )
+    ]);
+    const info = accRes.ok ? await accRes.json() : {};
+    const tokenBalances = { tzbtc: 0, usdt: 0 };
+    if (balRes.ok) {
+      const balList = await balRes.json();
+      if (Array.isArray(balList)) {
+        balList.forEach((item) => {
+          const contractAddr = item.token?.contract?.address;
+          const tk = CONTRACT_TO_TOKEN_KEY.get(contractAddr);
+          if (tk && TOKEN_DEFINITIONS[tk]) {
+            const rawBal = parseFloat(item.balance || '0');
+            tokenBalances[tk] = rawBal / Math.pow(10, TOKEN_DEFINITIONS[tk].decimals);
+          }
+        });
+      }
+    }
+    return { ...(info || {}), tokenBalances };
   } catch {
     return null;
   }
@@ -536,20 +802,109 @@ async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000
   return null;
 }
 
+async function fetchFaTransfersBatch(tezosAddress, lastId = 0, batchLimit = 10000) {
+  const clampLimit = Math.min(10000, Math.max(1, Number(batchLimit) || 10000));
+  const baseUrl = `https://api.tzkt.io/v1/tokens/transfers?anyof.from.to=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&amount.gt=0&sort.desc=id&select=id,timestamp,token,from,to,amount,transactionId&limit=${clampLimit}`;
+  const url = lastId > 0 ? `${baseUrl}&offset.cr=${lastId}` : baseUrl;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`TzKT HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 600));
+      } else {
+        console.error('Error fetching FA token transfers batch:', err);
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+async function resolveTxRefsToHashes(refs) {
+  if (!refs || refs.length === 0) return [];
+  const unresolvedIds = [];
+  for (let i = 0; i < refs.length; i++) {
+    const r = String(refs[i] || '');
+    if (r.startsWith('txid:')) {
+      const idNum = Number(r.slice(5));
+      if (idNum && !txIdToHashCache.has(idNum)) {
+        unresolvedIds.push(idNum);
+      }
+    }
+  }
+
+  if (unresolvedIds.length > 0) {
+    const uniqueIds = Array.from(new Set(unresolvedIds));
+    const chunkSize = 80;
+    for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+      const chunk = uniqueIds.slice(i, i + chunkSize);
+      try {
+        const res = await fetch(
+          `https://api.tzkt.io/v1/operations/transactions?id.in=${chunk.join(',')}&select=id,hash&limit=${chunk.length}`
+        );
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows)) {
+            rows.forEach((row) => {
+              if (row.id && row.hash) {
+                txIdToHashCache.set(Number(row.id), row.hash);
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error resolving transactionIds to hashes:', err);
+      }
+    }
+  }
+
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < refs.length; i++) {
+    const r = String(refs[i] || '');
+    let resolved = r;
+    if (r.startsWith('txid:')) {
+      const idNum = Number(r.slice(5));
+      resolved = txIdToHashCache.get(idNum) || r;
+    }
+    if (resolved && !seen.has(resolved)) {
+      seen.add(resolved);
+      out.push(resolved);
+    }
+  }
+  return out;
+}
+
+function formatTxRefSync(ref) {
+  const s = String(ref || '');
+  if (s.startsWith('txid:')) {
+    const idNum = Number(s.slice(5));
+    return txIdToHashCache.get(idNum) || s;
+  }
+  return s;
+}
+
 async function fetchAllData(tezosAddress, requestedLimit) {
   const numLimit = Number(requestedLimit) || 10000;
+  const needFa = viewConfig.faEnabled;
 
   if (cache.has(tezosAddress)) {
     const cached = cache.get(tezosAddress);
-    if (cached.exhausted || cached.limit >= numLimit) {
+    const xtzReady = cached.exhausted || cached.limit >= numLimit;
+    const faReady = !needFa || cached.faExhausted || (cached.faLimit || 0) >= numLimit;
+    if (xtzReady && faReady) {
       return {
         operations: [...cached.txData.slice(0, numLimit), ...(cached.specialOps || [])],
+        faTransfers: needFa ? (cached.faData || []).slice(0, numLimit) : [],
         accountInfo: cached.accountInfo
       };
     }
   }
 
-  // Show loader inside the unified workspace while keeping the block header visible
   const loaderEl = document.getElementById('loader');
   const loaderStatus = document.getElementById('loader-status');
   const emptyState = document.getElementById('empty-state');
@@ -563,12 +918,17 @@ async function fetchAllData(tezosAddress, requestedLimit) {
   if (statsStrip) statsStrip.style.display = 'none';
   if (loaderEl) loaderEl.style.display = 'flex';
 
-  // Start from existing cached data if expanding depth on same address
   const existing = cache.get(tezosAddress);
   const txData = existing ? [...existing.txData] : [];
   let lastOffset = existing ? existing.lastOffset : 0;
   let counter = txData.length;
-  let exhausted = false;
+  let exhausted = existing ? Boolean(existing.exhausted) : false;
+
+  const faData = existing?.faData ? [...existing.faData] : [];
+  let faLastOffset = existing?.faLastOffset || 0;
+  let faCounter = faData.length;
+  let faExhausted = existing ? Boolean(existing.faExhausted) : false;
+  let faLimit = existing?.faLimit || 0;
 
   const accountPromise = existing?.accountInfo
     ? Promise.resolve(existing.accountInfo)
@@ -578,12 +938,12 @@ async function fetchAllData(tezosAddress, requestedLimit) {
     ? Promise.resolve(existing.specialOps)
     : fetchSpecialAccountOps(tezosAddress);
 
-  while (counter < numLimit) {
+  while (!exhausted && counter < numLimit) {
     const remaining = numLimit - counter;
     const batchSize = Math.min(10000, Math.max(1000, remaining));
 
     if (loaderStatus) {
-      loaderStatus.textContent = `Fetching transactions from TzKT… ${counter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
+      loaderStatus.textContent = `Fetching XTZ transactions from TzKT… ${counter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
     }
 
     const batch = await fetchOperationsBatch(tezosAddress, lastOffset, batchSize);
@@ -593,7 +953,11 @@ async function fetchAllData(tezosAddress, requestedLimit) {
     }
 
     for (let i = 0; i < batch.length; i++) {
-      txData.push(batch[i]);
+      const op = batch[i];
+      if (op.id && op.hash) {
+        txIdToHashCache.set(Number(op.id), op.hash);
+      }
+      txData.push(op);
     }
     lastOffset = batch[batch.length - 1].id;
     counter = txData.length;
@@ -604,144 +968,266 @@ async function fetchAllData(tezosAddress, requestedLimit) {
     }
   }
 
+  if (needFa) {
+    while (!faExhausted && faCounter < numLimit) {
+      const remaining = numLimit - faCounter;
+      const batchSize = Math.min(10000, Math.max(1000, remaining));
+
+      if (loaderStatus) {
+        loaderStatus.textContent = `Fetching FA token transfers (tzBTC / USDt)… ${faCounter.toLocaleString('en-US')} / ${numLimit.toLocaleString('en-US')}`;
+      }
+
+      const batch = await fetchFaTransfersBatch(tezosAddress, faLastOffset, batchSize);
+      if (!batch || !Array.isArray(batch) || batch.length === 0) {
+        faExhausted = true;
+        break;
+      }
+
+      for (let i = 0; i < batch.length; i++) {
+        faData.push(batch[i]);
+      }
+      faLastOffset = batch[batch.length - 1].id;
+      faCounter = faData.length;
+
+      if (batch.length < batchSize) {
+        faExhausted = true;
+        break;
+      }
+    }
+    faLimit = Math.max(faCounter, numLimit);
+  }
+
   const [accountInfo, specialOps] = await Promise.all([accountPromise, specialOpsPromise]);
 
   cache.set(tezosAddress, {
     txData,
     specialOps,
-    limit: Math.max(counter, numLimit),
+    limit: Math.max(counter, existing?.limit || 0, numLimit),
     lastOffset,
     exhausted,
+    faData,
+    faLimit,
+    faLastOffset,
+    faExhausted,
     accountInfo
   });
 
   return {
     operations: [...txData.slice(0, numLimit), ...specialOps],
+    faTransfers: needFa ? faData.slice(0, numLimit) : [],
     accountInfo
   };
 }
 
 // ============================================================================
-// Transaction Parsing
+// Unified Counterparty Multi-Token Transaction Parsing
+// Groups all enabled token flows for the same counterparty into a single node
+// with an array of `tokenFlows` (so 1 node can emit/receive 1, 2, or 3 colored ribbons)
 // ============================================================================
 
-function parseTransactions(data, tezosAddress, tezLimitVal) {
-  const inflowsMap = new Map();
-  const outflowsMap = new Map();
+function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
+  const inflowsMap = new Map(); // Map<realAddress, UnifiedNodeEntry>
+  const outflowsMap = new Map(); // Map<realAddress, UnifiedNodeEntry>
   const addressToAliasMap = new Map();
-  const txHashesMap = new Map(); // Keyed by display label AND address for full compatibility
+  const txHashesMap = new Map();
 
-  if (!data || !Array.isArray(data)) {
-    return {
-      inflows: [],
-      outflows: [],
-      allInflowsCount: 0,
-      allOutflowsCount: 0,
-      addressToAliasMap,
-      txHashesMap
-    };
-  }
-
-  function recordFlow(map, keyAddress, displayAlias, amount, timestamp, opHash, isSpecial = false) {
+  function recordUnifiedFlow(map, keyAddress, displayAlias, amount, timestamp, opRef, isSpecial = false, tokenKey = 'xtz') {
     if (!amount || amount <= 0) return;
-    const existing = map.get(keyAddress);
-    if (existing) {
-      existing.amount += amount;
-      existing.count += 1;
-      if (timestamp < existing.dateRange.start) existing.dateRange.start = timestamp;
-      if (timestamp > existing.dateRange.end) existing.dateRange.end = timestamp;
-      if (opHash && !existing.txHashSet.has(opHash)) {
-        existing.txHashSet.add(opHash);
-        existing.txHashes.push(opHash);
-      }
-      if (!existing.alias && displayAlias && displayAlias !== keyAddress) {
-        existing.alias = displayAlias;
-      }
-    } else {
-      const txHashSet = new Set(opHash ? [opHash] : []);
-      map.set(keyAddress, {
+    const tokenDef = TOKEN_DEFINITIONS[tokenKey] || TOKEN_DEFINITIONS.xtz;
+    let nodeEntry = map.get(keyAddress);
+
+    if (!nodeEntry) {
+      nodeEntry = {
+        flowKey: keyAddress,
         realAddress: keyAddress,
         alias: displayAlias && displayAlias !== keyAddress ? displayAlias : '',
-        address: displayAlias || keyAddress, // Preserves display label compatibility
-        amount,
-        count: 1,
+        address: displayAlias || keyAddress,
+        tokenMap: new Map(), // Map<tokenKey, TokenSubFlow>
+        tokenFlows: [],
+        amount: 0,
+        equivalentTez: 0,
+        count: 0,
         dateRange: { start: timestamp, end: timestamp },
-        txHashes: opHash ? [opHash] : [],
-        txHashSet,
+        txHashes: [],
+        txHashSet: new Set(),
         isSpecial
-      });
+      };
+      map.set(keyAddress, nodeEntry);
+    } else {
+      if (!nodeEntry.alias && displayAlias && displayAlias !== keyAddress) {
+        nodeEntry.alias = displayAlias;
+        nodeEntry.address = displayAlias;
+      }
+      if (timestamp < nodeEntry.dateRange.start) nodeEntry.dateRange.start = timestamp;
+      if (timestamp > nodeEntry.dateRange.end) nodeEntry.dateRange.end = timestamp;
+    }
+
+    nodeEntry.count += 1;
+    if (opRef && !nodeEntry.txHashSet.has(opRef)) {
+      nodeEntry.txHashSet.add(opRef);
+      nodeEntry.txHashes.push(opRef);
+    }
+
+    let tf = nodeEntry.tokenMap.get(tokenKey);
+    if (!tf) {
+      tf = {
+        tokenKey,
+        tokenSymbol: tokenDef.symbol,
+        tokenTicker: tokenDef.ticker,
+        tokenContract: tokenDef.contract,
+        amount: 0,
+        equivalentTez: 0,
+        count: 0,
+        txHashes: [],
+        txHashSet: new Set(),
+        isSpecial
+      };
+      nodeEntry.tokenMap.set(tokenKey, tf);
+    }
+    tf.amount += amount;
+    tf.equivalentTez = tf.amount * tokenDef.tezEquivalentRate;
+    tf.count += 1;
+    if (opRef && !tf.txHashSet.has(opRef)) {
+      tf.txHashSet.add(opRef);
+      tf.txHashes.push(opRef);
     }
   }
 
-  data.forEach((operation) => {
-    const senderAddr = operation.sender?.address || '';
-    const targetAddr = operation.target?.address || '';
-    const senderAlias = operation.sender?.alias || senderAddr;
-    const targetAlias = operation.target?.alias || targetAddr;
-    const timestamp = new Date(operation.timestamp);
+  // 1. Parse Native XTZ Operations if XTZ is enabled
+  if (viewConfig.enabledTokens.has('xtz') && Array.isArray(data)) {
+    data.forEach((operation) => {
+      const senderAddr = operation.sender?.address || '';
+      const targetAddr = operation.target?.address || '';
+      const senderAlias = operation.sender?.alias || senderAddr;
+      const targetAlias = operation.target?.alias || targetAddr;
+      const timestamp = new Date(operation.timestamp);
 
-    if (operation.type === 'activation') {
-      const accAddr = operation.account?.address || tezosAddress;
-      const accAlias = operation.account?.alias || accAddr;
-      addressToAliasMap.set(accAddr, accAlias);
+      if (operation.type === 'activation') {
+        const accAddr = operation.account?.address || tezosAddress;
+        const accAlias = operation.account?.alias || accAddr;
+        addressToAliasMap.set(accAddr, accAlias);
 
-      const specialKey = '~Activation~';
-      const amount = parseFloat(operation.balance / 1_000_000);
-      recordFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true);
-    } else if (operation.type === 'migration' && operation.kind === 'bootstrap') {
-      const accAddr = operation.account?.address || tezosAddress;
-      const accAlias = operation.account?.alias || accAddr;
-      addressToAliasMap.set(accAddr, accAlias);
+        const specialKey = '~Activation~';
+        const amount = parseFloat(operation.balance / 1_000_000);
+        recordUnifiedFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true, 'xtz');
+      } else if (operation.type === 'migration' && operation.kind === 'bootstrap') {
+        const accAddr = operation.account?.address || tezosAddress;
+        const accAlias = operation.account?.alias || accAddr;
+        addressToAliasMap.set(accAddr, accAlias);
 
-      const specialKey = '~Bootstrap~';
-      const amount = parseFloat(operation.balanceChange / 1_000_000);
-      recordFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true);
-    } else if (operation.type === 'migration' && operation.kind === 'subsidy') {
-      const accAddr = operation.account?.address || tezosAddress;
-      const accAlias = operation.account?.alias || accAddr;
-      addressToAliasMap.set(accAddr, accAlias);
+        const specialKey = '~Bootstrap~';
+        const amount = parseFloat(operation.balanceChange / 1_000_000);
+        recordUnifiedFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true, 'xtz');
+      } else if (operation.type === 'migration' && operation.kind === 'subsidy') {
+        const accAddr = operation.account?.address || tezosAddress;
+        const accAlias = operation.account?.alias || accAddr;
+        addressToAliasMap.set(accAddr, accAlias);
 
-      const specialKey = '~Subsidy~';
-      const amount = parseFloat(operation.balanceChange / 1_000_000);
-      recordFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true);
-    } else if (operation.type === 'origination') {
-      if (operation.contractBalance > 0) {
-        const origAddr = operation.originatedContract?.address || '';
-        const origAlias = operation.originatedContract?.alias || origAddr;
-        const amount = parseFloat(operation.contractBalance / 1_000_000);
+        const specialKey = '~Subsidy~';
+        const amount = parseFloat(operation.balanceChange / 1_000_000);
+        recordUnifiedFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true, 'xtz');
+      } else if (operation.type === 'origination') {
+        if (operation.contractBalance > 0) {
+          const origAddr = operation.originatedContract?.address || '';
+          const origAlias = operation.originatedContract?.alias || origAddr;
+          const amount = parseFloat(operation.contractBalance / 1_000_000);
 
-        if (senderAddr === tezosAddress && origAddr) {
-          addressToAliasMap.set(senderAddr, senderAlias);
-          addressToAliasMap.set(origAddr, origAlias);
-          recordFlow(outflowsMap, origAddr, origAlias, amount, timestamp, operation.hash, false);
-        } else if (origAddr === tezosAddress && senderAddr) {
-          addressToAliasMap.set(senderAddr, senderAlias);
-          addressToAliasMap.set(origAddr, origAlias);
-          recordFlow(inflowsMap, senderAddr, senderAlias, amount, timestamp, operation.hash, false);
+          if (senderAddr === tezosAddress && origAddr) {
+            addressToAliasMap.set(senderAddr, senderAlias);
+            addressToAliasMap.set(origAddr, origAlias);
+            recordUnifiedFlow(outflowsMap, origAddr, origAlias, amount, timestamp, operation.hash, false, 'xtz');
+          } else if (origAddr === tezosAddress && senderAddr) {
+            addressToAliasMap.set(senderAddr, senderAlias);
+            addressToAliasMap.set(origAddr, origAlias);
+            recordUnifiedFlow(inflowsMap, senderAddr, senderAlias, amount, timestamp, operation.hash, false, 'xtz');
+          }
+        }
+      } else if (!operation.type || operation.type === 'transaction') {
+        if (senderAddr) addressToAliasMap.set(senderAddr, senderAlias);
+        if (targetAddr) addressToAliasMap.set(targetAddr, targetAlias);
+
+        const amount = parseFloat(operation.amount / 1_000_000);
+        if (amount > 0) {
+          if (senderAddr === tezosAddress && targetAddr) {
+            recordUnifiedFlow(outflowsMap, targetAddr, targetAlias, amount, timestamp, operation.hash, false, 'xtz');
+          }
+          if (targetAddr === tezosAddress && senderAddr && senderAddr !== tezosAddress) {
+            recordUnifiedFlow(inflowsMap, senderAddr, senderAlias, amount, timestamp, operation.hash, false, 'xtz');
+          }
         }
       }
-    } else if (!operation.type || operation.type === 'transaction') {
-      if (senderAddr) addressToAliasMap.set(senderAddr, senderAlias);
-      if (targetAddr) addressToAliasMap.set(targetAddr, targetAlias);
+    });
+  }
 
-      const amount = parseFloat(operation.amount / 1_000_000);
-      if (amount > 0) {
-        if (senderAddr === tezosAddress && targetAddr) {
-          recordFlow(outflowsMap, targetAddr, targetAlias, amount, timestamp, operation.hash, false);
-        }
-        if (targetAddr === tezosAddress && senderAddr && senderAddr !== tezosAddress) {
-          recordFlow(inflowsMap, senderAddr, senderAlias, amount, timestamp, operation.hash, false);
-        }
+  // 2. Parse FA Token Transfers (tzBTC, USDt) when FA Tokens switch is enabled
+  if (viewConfig.faEnabled && Array.isArray(faTransfers)) {
+    faTransfers.forEach((transfer) => {
+      const contractAddr = transfer.token?.contract?.address;
+      const tokenKey = CONTRACT_TO_TOKEN_KEY.get(contractAddr);
+      if (!tokenKey || !viewConfig.enabledTokens.has(tokenKey)) return;
+
+      const tokenDef = TOKEN_DEFINITIONS[tokenKey];
+      const decimals = Number(tokenDef.decimals || transfer.token?.metadata?.decimals || 6);
+      const rawAmount = parseFloat(transfer.amount || '0');
+      const amount = rawAmount / Math.pow(10, decimals);
+      if (!amount || amount <= 0) return;
+
+      const fromAddr = transfer.from?.address || '~Mint~';
+      const toAddr = transfer.to?.address || '~Burn~';
+      const fromAlias = transfer.from?.alias || fromAddr;
+      const toAlias = transfer.to?.alias || toAddr;
+      const timestamp = new Date(transfer.timestamp);
+
+      if (transfer.from?.address) addressToAliasMap.set(fromAddr, fromAlias);
+      if (transfer.to?.address) addressToAliasMap.set(toAddr, toAlias);
+
+      const txId = transfer.transactionId;
+      const opRef = txId
+        ? txIdToHashCache.get(Number(txId)) || `txid:${txId}`
+        : '';
+
+      if (fromAddr === tezosAddress && toAddr) {
+        const isSpecial = toAddr.startsWith('~');
+        recordUnifiedFlow(outflowsMap, toAddr, toAlias, amount, timestamp, opRef, isSpecial, tokenKey);
       }
-    }
-  });
+      if (toAddr === tezosAddress && fromAddr && fromAddr !== tezosAddress) {
+        const isSpecial = fromAddr.startsWith('~');
+        recordUnifiedFlow(inflowsMap, fromAddr, fromAlias, amount, timestamp, opRef, isSpecial, tokenKey);
+      }
+    });
+  }
 
   const minTez = parseFloat(tezLimitVal) || 0;
   const allInflowsCount = inflowsMap.size;
   const allOutflowsCount = outflowsMap.size;
 
-  const inflows = [...inflowsMap.values()].filter((entry) => entry.amount >= minTez);
-  const outflows = [...outflowsMap.values()].filter((entry) => entry.amount >= minTez);
+  function finalizeNodeEntries(map) {
+    const list = [];
+    map.forEach((entry) => {
+      // Keep token flows in canonical order ['xtz', 'tzbtc', 'usdt'] that pass dust filter
+      const keptFlows = ALL_TOKEN_ORDER
+        .filter((tk) => entry.tokenMap.has(tk))
+        .map((tk) => entry.tokenMap.get(tk))
+        .filter((tf) => tf.equivalentTez >= minTez);
+
+      if (keptFlows.length === 0) return;
+
+      entry.tokenFlows = keptFlows;
+      entry.equivalentTez = keptFlows.reduce((s, tf) => s + tf.equivalentTez, 0);
+      // Primary token key (for single-token nodes or dominant flow)
+      const primaryTf = [...keptFlows].sort((a, b) => b.equivalentTez - a.equivalentTez)[0];
+      entry.tokenKey = primaryTf.tokenKey;
+      entry.tokenSymbol = primaryTf.tokenSymbol;
+      entry.tokenTicker = keptFlows.map((tf) => tf.tokenTicker).join(' + ');
+      entry.amount = keptFlows.length === 1 ? keptFlows[0].amount : entry.equivalentTez;
+      entry.count = keptFlows.reduce((s, tf) => s + tf.count, 0);
+      list.push(entry);
+    });
+    return list;
+  }
+
+  const inflows = finalizeNodeEntries(inflowsMap);
+  const outflows = finalizeNodeEntries(outflowsMap);
 
   // Detect bidirectional counterparties (present in both inflows and outflows)
   const inflowAddresses = new Set(inflows.map((i) => i.realAddress));
@@ -791,18 +1277,24 @@ async function generateDataAndDrawDiagram(tezosAddress, limit) {
   const loaderEl = document.getElementById('loader');
   if (loaderEl) loaderEl.style.display = 'none';
 
-  if (!result || !result.operations || result.operations.length === 0) {
+  const hasXtzOps = result?.operations && result.operations.length > 0;
+  const hasFaOps = result?.faTransfers && result.faTransfers.length > 0;
+
+  if (!result || (!hasXtzOps && !hasFaOps)) {
     showNotification('No operations found for this address');
     const emptyState = document.getElementById('empty-state');
     if (emptyState) {
       emptyState.style.display = 'block';
       emptyState.querySelector('h2').textContent = 'No Value Flows Found';
-      emptyState.querySelector('p').textContent = `No applied XTZ operations were found for "${tezosAddress}". Check the address or try another wallet or contract.`;
+      emptyState.querySelector('p').textContent = viewConfig.faEnabled
+        ? `No applied XTZ, tzBTC, or USDt operations were found for "${tezosAddress}". Check the address or try another wallet or contract.`
+        : `No applied XTZ operations were found for "${tezosAddress}". Try enabling the FA Tokens switch (tzBTC / USDt) or check another address.`;
     }
     return;
   }
 
-  currentRawData = result.operations;
+  currentRawData = result.operations || [];
+  currentFaData = result.faTransfers || [];
   currentAccountInfo = result.accountInfo;
 
   if (historyIndex === -1 || history[historyIndex] !== tezosAddress) {
@@ -814,14 +1306,18 @@ async function generateDataAndDrawDiagram(tezosAddress, limit) {
 
 function refreshDiagramFromMemory() {
   const tezLimitVal = tezLimitSlider.value;
-  currentParsed = parseTransactions(currentRawData, currentAddress, tezLimitVal);
+  currentParsed = parseTransactions(currentRawData, currentFaData, currentAddress, tezLimitVal);
 
   const { inflows, outflows, addressToAliasMap } = currentParsed;
   if (currentAccountInfo?.alias) {
     addressToAliasMap.set(currentAddress, currentAccountInfo.alias);
   }
 
-  updateStatsStrip(currentAddress, inflows, outflows, currentRawData.length, currentAccountInfo);
+  const totalAnalyzedOps =
+    (viewConfig.enabledTokens.has('xtz') ? currentRawData.length : 0) +
+    (viewConfig.faEnabled ? currentFaData.length : 0);
+
+  updateStatsStrip(currentAddress, inflows, outflows, totalAnalyzedOps, currentAccountInfo);
 
   document.getElementById('empty-state').style.display = 'none';
   document.getElementById('stats-strip').style.display = 'grid';
@@ -833,52 +1329,149 @@ function refreshDiagramFromMemory() {
   renderCurrentSankey();
 }
 
+function computeTokenTotalsMap(entries) {
+  const map = new Map();
+  entries.forEach((e) => {
+    if (Array.isArray(e.tokenFlows)) {
+      e.tokenFlows.forEach((tf) => {
+        map.set(tf.tokenKey, (map.get(tf.tokenKey) || 0) + (tf.amount || 0));
+      });
+    } else {
+      const tk = e.tokenKey || 'xtz';
+      map.set(tk, (map.get(tk) || 0) + (e.amount || 0));
+    }
+  });
+  return map;
+}
+
+function formatMultiTokenSummaryPlain(totalsMap, compact = true) {
+  const activeOrder = ALL_TOKEN_ORDER.filter((tk) => viewConfig.enabledTokens.has(tk));
+  const parts = [];
+  activeOrder.forEach((tk) => {
+    const val = totalsMap.get(tk) || 0;
+    if (val > 0 || activeOrder.length === 1) {
+      parts.push(formatTokenAmount(val, tk, compact));
+    }
+  });
+  if (parts.length === 0) {
+    const firstTk = activeOrder[0] || 'xtz';
+    return formatTokenAmount(0, firstTk, compact);
+  }
+  return parts.join(' • ');
+}
+
 function updateStatsStrip(targetAddress, inflows, outflows, opsCount, accountInfo) {
   const externalInflows = inflows.filter((e) => !e.isSelfTransfer);
   const externalOutflows = outflows.filter((e) => !e.isSelfTransfer);
-  const selfEntry = outflows.find((o) => o.isSelfTransfer);
+  const selfEntries = outflows.filter((o) => o.isSelfTransfer);
 
   const numInflows = externalInflows.length;
-  const amInflows = externalInflows.reduce((sum, e) => sum + (e.amount || 0), 0);
   const txInflows = externalInflows.reduce((sum, e) => sum + (e.count || 0), 0);
 
   const numOutflows = externalOutflows.length;
-  const amOutflows = externalOutflows.reduce((sum, e) => sum + (e.amount || 0), 0);
   const txOutflows = externalOutflows.reduce((sum, e) => sum + (e.count || 0), 0);
 
-  const netFlow = amInflows - amOutflows;
-  const netSign = netFlow > 0 ? '+' : '';
+  const inByToken = computeTokenTotalsMap(externalInflows);
+  const outByToken = computeTokenTotalsMap(externalOutflows);
 
+  const amXtzIn = inByToken.get('xtz') || 0;
+  const amXtzOut = outByToken.get('xtz') || 0;
   console.log(
-    `inputs:${numInflows}; outputs:${numOutflows}\r\nin:${amInflows.toFixed(2)}; out:${amOutflows.toFixed(2)}`
+    `inputs:${numInflows}; outputs:${numOutflows}\r\nin:${amXtzIn.toFixed(2)}; out:${amXtzOut.toFixed(2)}`
   );
 
-  document.getElementById('stat-inflow-val').textContent = formatTez(amInflows);
-  document.getElementById('stat-inflow-meta').textContent = `${numInflows.toLocaleString()} senders • ${txInflows.toLocaleString()} txes`;
-
-  document.getElementById('stat-outflow-val').textContent = formatTez(amOutflows);
-  document.getElementById('stat-outflow-meta').textContent = `${numOutflows.toLocaleString()} receivers • ${txOutflows.toLocaleString()} txes`;
-
+  const inValEl = document.getElementById('stat-inflow-val');
+  const outValEl = document.getElementById('stat-outflow-val');
   const netEl = document.getElementById('stat-net-val');
-  netEl.textContent = `${netSign}${formatTez(netFlow)}`;
-  netEl.style.color = netFlow >= 0 ? 'var(--inflow-light)' : 'var(--outflow-light)';
 
-  const balanceStr = accountInfo && typeof accountInfo.balance === 'number'
-    ? `Live balance: ${formatTez(accountInfo.balance / 1_000_000)}`
-    : 'Filtered net delta';
-  document.getElementById('stat-net-meta').textContent = balanceStr;
+  const isSingleXtzMode =
+    !viewConfig.faEnabled && viewConfig.enabledTokens.size === 1 && viewConfig.enabledTokens.has('xtz');
+
+  if (isSingleXtzMode) {
+    const netFlow = amXtzIn - amXtzOut;
+    const netSign = netFlow > 0 ? '+' : '';
+    inValEl.textContent = formatTez(amXtzIn);
+    outValEl.textContent = formatTez(amXtzOut);
+    netEl.textContent = `${netSign}${formatTez(netFlow)}`;
+    netEl.style.color = netFlow >= 0 ? 'var(--inflow-light)' : 'var(--outflow-light)';
+  } else {
+    const activeTokens = ALL_TOKEN_ORDER.filter((tk) => viewConfig.enabledTokens.has(tk));
+    const renderChips = (mode) => {
+      const chips = [];
+      activeTokens.forEach((tk) => {
+        const inAmt = inByToken.get(tk) || 0;
+        const outAmt = outByToken.get(tk) || 0;
+        if (inAmt === 0 && outAmt === 0 && activeTokens.length > 1 && tk !== 'xtz') return;
+        let text = '';
+        if (mode === 'in') {
+          text = `+${formatTokenAmount(inAmt, tk, true)}`;
+        } else if (mode === 'out') {
+          text = `-${formatTokenAmount(outAmt, tk, true)}`;
+        } else {
+          const net = inAmt - outAmt;
+          const sign = net > 0 ? '+' : '';
+          text = `${sign}${formatTokenAmount(net, tk, true)}`;
+        }
+        chips.push(`<span class="stat-token-chip ${tk}">${escapeHtml(text)}</span>`);
+      });
+      if (chips.length === 0) {
+        const fallbackTk = activeTokens[0] || 'xtz';
+        chips.push(
+          `<span class="stat-token-chip ${fallbackTk}">${escapeHtml(formatTokenAmount(0, fallbackTk, true))}</span>`
+        );
+      }
+      return `<div class="stat-token-breakdown">${chips.join('')}</div>`;
+    };
+
+    inValEl.innerHTML = renderChips('in');
+    outValEl.innerHTML = renderChips('out');
+    netEl.innerHTML = renderChips('net');
+    netEl.style.color = '';
+  }
+
+  document.getElementById('stat-inflow-meta').textContent = `${numInflows.toLocaleString()} senders • ${txInflows.toLocaleString()} transfers`;
+  document.getElementById('stat-outflow-meta').textContent = `${numOutflows.toLocaleString()} receivers • ${txOutflows.toLocaleString()} transfers`;
+
+  const balParts = [];
+  if (accountInfo && typeof accountInfo.balance === 'number' && viewConfig.enabledTokens.has('xtz')) {
+    balParts.push(formatTez(accountInfo.balance / 1_000_000, true));
+  }
+  if (viewConfig.faEnabled && accountInfo?.tokenBalances) {
+    FA_TOKEN_KEYS.forEach((tk) => {
+      if (viewConfig.enabledTokens.has(tk)) {
+        const b = accountInfo.tokenBalances[tk] || 0;
+        if (b > 0) balParts.push(formatTokenAmount(b, tk, true));
+      }
+    });
+  }
+  document.getElementById('stat-net-meta').textContent =
+    balParts.length > 0 ? `Live bal: ${balParts.join(' • ')}` : 'Filtered net delta';
 
   document.getElementById('stat-scope-val').textContent = `${opsCount.toLocaleString()} ops`;
   const biCount = externalInflows.filter((i) => i.isBidirectional).length;
+  const multiTokenNodes = [...externalInflows, ...externalOutflows].filter(
+    (e) => e.tokenFlows && e.tokenFlows.length > 1
+  ).length;
   const metaParts = [];
+  if (viewConfig.faEnabled) {
+    const activeTickers = ALL_TOKEN_ORDER
+      .filter((k) => viewConfig.enabledTokens.has(k))
+      .map((k) => TOKEN_DEFINITIONS[k].ticker)
+      .join(' + ');
+    metaParts.push(activeTickers);
+  }
+  if (multiTokenNodes > 0) metaParts.push(`${multiTokenNodes} multi-token node${multiTokenNodes > 1 ? 's' : ''}`);
   if (biCount > 0) metaParts.push(`${biCount} bidirectional (⇄)`);
-  if (selfEntry) metaParts.push(`${selfEntry.count} self-tx (${formatTez(selfEntry.amount, true)} ↺)`);
+  if (selfEntries.length > 0) {
+    const selfCount = selfEntries.reduce((s, e) => s + e.count, 0);
+    metaParts.push(`${selfCount} self-tx (↺)`);
+  }
   document.getElementById('stat-scope-meta').textContent =
     metaParts.length > 0 ? metaParts.join(' • ') : 'Click any node to copy & pivot';
 }
 
 // ============================================================================
-// High-Readability Custom SVG Sankey Diagram Engine
+// High-Readability Custom SVG Sankey Diagram Engine (Multi-Ribbon Unified Nodes)
 // ============================================================================
 
 function renderCurrentSankey() {
@@ -892,47 +1485,72 @@ function renderCurrentSankey() {
   );
 }
 
-function sortAndGroupFlows(entries, side, totalAmount) {
+function sortAndGroupFlows(entries, side, totalByTokenMap, totalEquivTez) {
   const query = viewConfig.searchQuery;
   let filtered = entries;
   if (query) {
     filtered = entries.filter(
       (e) =>
         e.realAddress.toLowerCase().includes(query) ||
-        (e.alias && e.alias.toLowerCase().includes(query))
+        (e.alias && e.alias.toLowerCase().includes(query)) ||
+        (e.tokenTicker && e.tokenTicker.toLowerCase().includes(query))
     );
   }
+
+  const multiTokenActive = viewConfig.enabledTokens.size > 1;
 
   const sorted = [...filtered].sort((a, b) => {
     if (viewConfig.circularFlows && side === 'in' && a.isBidirectional !== b.isBidirectional) {
       return a.isBidirectional ? -1 : 1;
     }
     if (viewConfig.sortMode === 'count') {
-      return b.count - a.count || b.amount - a.amount;
+      return b.count - a.count || b.equivalentTez - a.equivalentTez;
     }
     if (viewConfig.sortMode === 'recent') {
       return b.dateRange.end.getTime() - a.dateRange.end.getTime();
     }
+    if (multiTokenActive) {
+      return b.equivalentTez - a.equivalentTez;
+    }
     return b.amount - a.amount;
   });
 
+  const enrichItem = (item) => {
+    const clonedFlows = (item.tokenFlows || []).map((tf) => {
+      const tkTotal = totalByTokenMap.get(tf.tokenKey) || 0;
+      return {
+        ...tf,
+        sharePct: tkTotal > 0 ? (tf.amount / tkTotal) * 100 : 0
+      };
+    });
+    const singleTkTotal = totalByTokenMap.get(item.tokenKey || 'xtz') || 0;
+    const sharePct =
+      clonedFlows.length === 1
+        ? clonedFlows[0].sharePct
+        : totalEquivTez > 0
+        ? (item.equivalentTez / totalEquivTez) * 100
+        : singleTkTotal > 0
+        ? (item.amount / singleTkTotal) * 100
+        : 0;
+
+    return {
+      ...item,
+      tokenFlows: clonedFlows,
+      sharePct,
+      isAggregate: false
+    };
+  };
+
   const maxN = viewConfig.maxNodes || 50;
   if (sorted.length <= maxN) {
-    return sorted.map((item) => ({
-      ...item,
-      sharePct: totalAmount > 0 ? (item.amount / totalAmount) * 100 : 0,
-      isAggregate: false
-    }));
+    return sorted.map(enrichItem);
   }
 
-  const topItems = sorted.slice(0, maxN).map((item) => ({
-    ...item,
-    sharePct: totalAmount > 0 ? (item.amount / totalAmount) * 100 : 0,
-    isAggregate: false
-  }));
-
+  const topItems = sorted.slice(0, maxN).map(enrichItem);
   const restItems = sorted.slice(maxN);
-  let restAmount = 0;
+
+  // Combine remaining counterparties into a single unified aggregate node with per-token sub-flows!
+  const aggTokenMap = new Map();
   let restCount = 0;
   let minTs = Infinity;
   let maxTs = -Infinity;
@@ -940,7 +1558,6 @@ function sortAndGroupFlows(entries, side, totalAmount) {
 
   for (let i = 0; i < restItems.length; i++) {
     const e = restItems[i];
-    restAmount += e.amount;
     restCount += e.count;
     const sTime = e.dateRange.start.getTime();
     const eTime = e.dateRange.end.getTime();
@@ -951,19 +1568,68 @@ function sortAndGroupFlows(entries, side, totalAmount) {
         restHashes.push(e.txHashes[j]);
       }
     }
+    (e.tokenFlows || []).forEach((tf) => {
+      let cur = aggTokenMap.get(tf.tokenKey);
+      if (!cur) {
+        cur = {
+          tokenKey: tf.tokenKey,
+          tokenSymbol: tf.tokenSymbol,
+          tokenTicker: tf.tokenTicker,
+          tokenContract: tf.tokenContract,
+          amount: 0,
+          equivalentTez: 0,
+          count: 0,
+          txHashes: [],
+          isSpecial: false
+        };
+        aggTokenMap.set(tf.tokenKey, cur);
+      }
+      cur.amount += tf.amount;
+      cur.equivalentTez += tf.equivalentTez;
+      cur.count += tf.count;
+    });
   }
+
+  const aggFlows = ALL_TOKEN_ORDER
+    .filter((tk) => aggTokenMap.has(tk))
+    .map((tk) => {
+      const tf = aggTokenMap.get(tk);
+      const tkTotal = totalByTokenMap.get(tk) || 0;
+      tf.sharePct = tkTotal > 0 ? (tf.amount / tkTotal) * 100 : 0;
+      return tf;
+    });
+
+  const restEquivTez = aggFlows.reduce((s, tf) => s + tf.equivalentTez, 0);
+  const primaryAggTf = aggFlows[0] || {
+    tokenKey: 'xtz',
+    tokenSymbol: 'ꜩ',
+    tokenTicker: 'XTZ',
+    amount: 0
+  };
   const minDate = new Date(minTs === Infinity ? Date.now() : minTs);
   const maxDate = new Date(maxTs === -Infinity ? Date.now() : maxTs);
+  const aggLabel = `+ ${restItems.length} smaller ${side === 'in' ? 'senders' : 'receivers'}`;
 
   topItems.push({
+    flowKey: `__aggregate_${side}__`,
     realAddress: `__aggregate_${side}__`,
-    alias: `+ ${restItems.length} smaller ${side === 'in' ? 'senders' : 'receivers'}`,
-    address: `+ ${restItems.length} smaller ${side === 'in' ? 'senders' : 'receivers'}`,
-    amount: restAmount,
+    alias: aggLabel,
+    address: aggLabel,
+    tokenKey: primaryAggTf.tokenKey,
+    tokenSymbol: primaryAggTf.tokenSymbol,
+    tokenTicker: aggFlows.map((tf) => tf.tokenTicker).join(' + '),
+    tokenFlows: aggFlows,
+    amount: aggFlows.length === 1 ? primaryAggTf.amount : restEquivTez,
+    equivalentTez: restEquivTez,
     count: restCount,
     dateRange: { start: minDate, end: maxDate },
     txHashes: restHashes,
-    sharePct: totalAmount > 0 ? (restAmount / totalAmount) * 100 : 0,
+    sharePct:
+      aggFlows.length === 1
+        ? primaryAggTf.sharePct
+        : totalEquivTez > 0
+        ? (restEquivTez / totalEquivTez) * 100
+        : 0,
     isSpecial: false,
     isBidirectional: false,
     isAggregate: true,
@@ -981,21 +1647,28 @@ function computeScaledWeight(amount, scaleMode) {
   if (scaleMode === 'linear') {
     return v;
   }
-  // Default: 'sqrt' (Balanced)
   return Math.sqrt(v);
+}
+
+function getSubFlowScaleAmount(tf, multiTokenActive) {
+  if (!tf) return 0.0001;
+  return multiTokenActive ? Math.max(0.0001, tf.equivalentTez || tf.amount) : Math.max(0.0001, tf.amount);
 }
 
 function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAliasMap, txHashesMap) {
   const container = document.getElementById('sankey-diagram');
   if (!container) return;
 
+  const multiTokenActive = viewConfig.enabledTokens.size > 1;
   const externalRawOutflows = rawOutflows.filter((e) => !e.isSelfTransfer);
-  const totalInAmount = rawInflows.reduce((s, e) => s + e.amount, 0);
-  const totalOutAmount = externalRawOutflows.reduce((s, e) => s + e.amount, 0);
+  const totalInByToken = computeTokenTotalsMap(rawInflows);
+  const totalOutByToken = computeTokenTotalsMap(externalRawOutflows);
+  const totalInEquivTez = rawInflows.reduce((s, e) => s + (e.equivalentTez || 0), 0);
+  const totalOutEquivTez = externalRawOutflows.reduce((s, e) => s + (e.equivalentTez || 0), 0);
 
-  const inflows = sortAndGroupFlows(rawInflows, 'in', totalInAmount);
+  const inflows = sortAndGroupFlows(rawInflows, 'in', totalInByToken, totalInEquivTez);
 
-  // If Circular Flows mode (↺) is active, match visible inflow nodes that also received return funds, plus Hub self-transfers
+  // If Circular Flows mode (↺) is active, match visible inflow counterparty nodes that also received ANY outflow from the Hub
   const rawOutflowMap = new Map(rawOutflows.map((o) => [o.realAddress, o]));
   const mergedCircularAddresses = new Set();
   let selfLoopEntry = null;
@@ -1003,7 +1676,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   if (viewConfig.circularFlows) {
     // 1. Check if the Hub sent funds to itself (Self-Transfer: Hub -> Hub)
     const rawSelf = rawOutflowMap.get(targetAddress);
-    if (rawSelf && rawSelf.amount > 0) {
+    if (rawSelf && rawSelf.tokenFlows && rawSelf.tokenFlows.length > 0) {
       selfLoopEntry = {
         ...rawSelf,
         isSelfTransfer: true,
@@ -1012,16 +1685,23 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       mergedCircularAddresses.add(targetAddress);
     }
 
-    // 2. Match visible inflow senders that received return funds from the Hub
+    // 2. Match visible inflow senders that received return funds (in 1, 2, or 3 tokens) from the Hub
     inflows.forEach((item) => {
       if (!item.isAggregate && item.realAddress !== targetAddress && rawOutflowMap.has(item.realAddress)) {
         const retEntry = rawOutflowMap.get(item.realAddress);
-        if (retEntry && retEntry.amount > 0) {
+        if (retEntry && retEntry.tokenFlows && retEntry.tokenFlows.length > 0) {
           item.hasCircularReturn = true;
           item.returnEntry = retEntry;
+          item.returnTokenFlows = retEntry.tokenFlows.map((rtf) => {
+            const outTkTotal = totalOutByToken.get(rtf.tokenKey) || 0;
+            return {
+              ...rtf,
+              sharePct: outTkTotal > 0 ? (rtf.amount / outTkTotal) * 100 : 0
+            };
+          });
           item.returnAmount = retEntry.amount;
+          item.returnEquivalentTez = retEntry.equivalentTez;
           item.returnCount = retEntry.count;
-          item.returnSharePct = totalOutAmount > 0 ? (retEntry.amount / totalOutAmount) * 100 : 0;
           mergedCircularAddresses.add(item.realAddress);
         }
       }
@@ -1031,7 +1711,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   const effectiveRawOutflows = viewConfig.circularFlows
     ? externalRawOutflows.filter((o) => !mergedCircularAddresses.has(o.realAddress))
     : rawOutflows;
-  const outflows = sortAndGroupFlows(effectiveRawOutflows, 'out', totalOutAmount);
+  const outflows = sortAndGroupFlows(effectiveRawOutflows, 'out', totalOutByToken, totalOutEquivTez);
 
   // Update column headers
   const hdrIn = document.getElementById('hdr-inflows-label');
@@ -1039,64 +1719,86 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   const hdrCenter = document.getElementById('hdr-center-label');
   if (hdrIn) {
     const circNote = mergedCircularAddresses.size > 0 ? ` • ${mergedCircularAddresses.size} Circular ↺` : '';
-    hdrIn.textContent = `Inflows (${rawInflows.length} Senders • ${formatTez(totalInAmount, true)}${circNote})`;
+    hdrIn.textContent = `Inflows (${rawInflows.length} Senders • ${formatMultiTokenSummaryPlain(totalInByToken, true)}${circNote})`;
   }
   if (hdrOut) {
-    hdrOut.textContent = `Outflows (${externalRawOutflows.length} Receivers • ${formatTez(totalOutAmount, true)})`;
+    hdrOut.textContent = `Outflows (${externalRawOutflows.length} Receivers • ${formatMultiTokenSummaryPlain(totalOutByToken, true)})`;
   }
   const hubAlias = addressToAliasMap.get(targetAddress) || currentAccountInfo?.alias || shortenAddress(targetAddress);
   if (hdrCenter) {
     hdrCenter.textContent = `Target Hub — ${hubAlias}`;
   }
 
-  // Handle case where filter hid all nodes
   if (inflows.length === 0 && outflows.length === 0 && !selfLoopEntry) {
     container.innerHTML = `
       <div style="padding: 64px 24px; text-align: center; color: var(--text-secondary);">
         <i class="fa-solid fa-filter-circle-xmark" style="font-size: 2rem; color: var(--accent-primary); margin-bottom: 12px;"></i>
         <div style="font-size: 1rem; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">No counterparties match current filter</div>
-        <div style="font-size: 0.85rem;">Try lowering the Min Flow (ꜩ) slider or clearing the node search box.</div>
+        <div style="font-size: 0.85rem;">Try lowering the Min Flow (ꜩ) slider, enabling FA Tokens, or clearing the node search box.</div>
       </div>
     `;
     return;
   }
 
   // Geometry constants
-  const containerWidth = Math.max(1080, container.clientWidth || 1280);
+  const containerWidth = Math.max(1140, container.clientWidth || 1280);
   const W = containerWidth;
   const padX = 24;
-  const circularCount = mergedCircularAddresses.size;
-  const padYTop = circularCount > 0 ? Math.min(145, 68 + circularCount * 12) : 28;
-  const padYBottom = circularCount > 0 ? Math.min(130, 56 + circularCount * 12) : 28;
-  const cardW = Math.min(315, Math.max(295, Math.floor(W * 0.275)));
-  const hubW = 214;
+  const circularRibbonCount = inflows
+    .filter((i) => i.hasCircularReturn)
+    .reduce((s, i) => s + (i.returnTokenFlows?.length || 1), 0);
+  const padYTop = circularRibbonCount > 0 ? Math.min(165, 68 + circularRibbonCount * 11) : 28;
+  const padYBottom = circularRibbonCount > 0 ? Math.min(150, 56 + circularRibbonCount * 11) : 28;
+  const cardW = Math.min(342, Math.max(316, Math.floor(W * 0.285)));
+  const hubW = 238;
 
   const minCardH = 44;
   const maxExtraH = 42;
   const nodeGap = 9;
 
-  // Compute weights for scaling node heights & ribbon thicknesses
-  const allAmounts = [
-    ...inflows.map((e) => e.amount),
-    ...inflows.filter((e) => e.hasCircularReturn).map((e) => e.returnAmount),
-    ...outflows.map((e) => e.amount),
-    ...(selfLoopEntry ? [selfLoopEntry.amount] : [])
-  ];
+  // Compute weights for each sub-flow and node
+  const allSubWeights = [];
+  const collectSubWeights = (tfList) => {
+    (tfList || []).forEach((tf) => {
+      tf.weight = computeScaledWeight(getSubFlowScaleAmount(tf, multiTokenActive), viewConfig.scaleMode);
+      allSubWeights.push(tf.weight);
+    });
+  };
+  inflows.forEach((n) => {
+    collectSubWeights(n.tokenFlows);
+    if (n.hasCircularReturn) collectSubWeights(n.returnTokenFlows);
+  });
+  outflows.forEach((n) => collectSubWeights(n.tokenFlows));
+  if (selfLoopEntry) collectSubWeights(selfLoopEntry.tokenFlows);
+
   let maxWeight = 0.0001;
-  for (let i = 0; i < allAmounts.length; i++) {
-    const w = computeScaledWeight(allAmounts[i], viewConfig.scaleMode);
-    if (w > maxWeight) maxWeight = w;
+  for (let i = 0; i < allSubWeights.length; i++) {
+    if (allSubWeights[i] > maxWeight) maxWeight = allSubWeights[i];
   }
 
   function layoutColumn(items, xPos) {
     let curY = padYTop;
     const laidOut = items.map((item, idx) => {
-      const w = computeScaledWeight(item.amount, viewConfig.scaleMode);
-      const norm = w / maxWeight;
-      const baseH = Math.round(minCardH + norm * maxExtraH);
-      const h = item.hasCircularReturn ? Math.max(60, baseH + 14) : baseH;
-      const retW = item.hasCircularReturn ? computeScaledWeight(item.returnAmount, viewConfig.scaleMode) : 0;
-      const retNorm = item.hasCircularReturn ? retW / maxWeight : 0;
+      const subFlows = item.tokenFlows || [];
+      const retFlows = item.hasCircularReturn ? item.returnTokenFlows || [] : [];
+      const totalNodeWeight = subFlows.reduce((s, tf) => s + (tf.weight || 0), 0);
+      const totalRetWeight = retFlows.reduce((s, tf) => s + (tf.weight || 0), 0);
+      const norm = Math.min(1.35, totalNodeWeight / maxWeight);
+
+      const baseH = Math.round(minCardH + Math.min(1, norm) * maxExtraH);
+      // Add vertical height when a single counterparty node has multiple token flows or circular returns
+      const totalMetricLines = subFlows.length + retFlows.length;
+      const multiLineMinH = totalMetricLines > 1 ? 26 + totalMetricLines * 15 : minCardH;
+      const circMinH = item.hasCircularReturn ? 60 + Math.max(0, totalMetricLines - 2) * 14 : minCardH;
+      const h = Math.max(baseH, multiLineMinH, circMinH);
+
+      subFlows.forEach((tf) => {
+        tf.normWeight = (tf.weight || 0) / maxWeight;
+      });
+      retFlows.forEach((rtf) => {
+        rtf.normWeight = (rtf.weight || 0) / maxWeight;
+      });
+
       const node = {
         ...item,
         index: idx,
@@ -1104,10 +1806,9 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         y: curY,
         w: cardW,
         h,
-        weight: w,
-        normWeight: norm,
-        returnWeight: retW,
-        returnNormWeight: retNorm
+        weight: totalNodeWeight,
+        normWeight: Math.min(1, norm),
+        returnWeight: totalRetWeight
       };
       curY += h + nodeGap;
       return node;
@@ -1122,11 +1823,17 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   const contentH = Math.max(leftCol.totalColH, rightCol.totalColH, 360);
   const H = contentH + padYTop + padYBottom;
 
-  // Compute Hub port rail heights and exact ribbon thicknesses
   const circularNodes = leftCol.nodes.filter((n) => n.hasCircularReturn);
   if (selfLoopEntry) {
-    selfLoopEntry.weight = computeScaledWeight(selfLoopEntry.amount, viewConfig.scaleMode);
+    selfLoopEntry.weight = (selfLoopEntry.tokenFlows || []).reduce((s, tf) => s + (tf.weight || 0), 0);
   }
+
+  const totalLeftRibbonCount =
+    leftCol.nodes.reduce((s, n) => s + (n.tokenFlows?.length || 1), 0) + (selfLoopEntry ? 1 : 0);
+  const totalRightRibbonCount =
+    rightCol.nodes.reduce((s, n) => s + (n.tokenFlows?.length || 1), 0) +
+    circularNodes.reduce((s, n) => s + (n.returnTokenFlows?.length || 1), 0) +
+    (selfLoopEntry ? 1 : 0);
 
   const leftTotalWeight =
     leftCol.nodes.reduce((s, n) => s + n.weight, 0) + (selfLoopEntry ? selfLoopEntry.weight : 0) || 1;
@@ -1135,13 +1842,11 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       circularNodes.reduce((s, n) => s + n.returnWeight, 0) +
       (selfLoopEntry ? selfLoopEntry.weight : 0) || 1;
 
-  const totalLeftCount = leftCol.nodes.length + (selfLoopEntry ? 1 : 0);
-  const totalRightCount = rightCol.nodes.length + circularNodes.length + (selfLoopEntry ? 1 : 0);
-  const leftGap = totalLeftCount > 40 ? 0.8 : 1.5;
-  const rightGap = totalRightCount > 40 ? 0.8 : 1.5;
+  const leftGap = totalLeftRibbonCount > 40 ? 0.8 : 1.4;
+  const rightGap = totalRightRibbonCount > 40 ? 0.8 : 1.4;
 
-  const targetLeftSpan = Math.min(340, Math.max(80, totalLeftCount * 7));
-  const targetRightSpan = Math.min(340, Math.max(80, totalRightCount * 7));
+  const targetLeftSpan = Math.min(360, Math.max(80, totalLeftRibbonCount * 7));
+  const targetRightSpan = Math.min(360, Math.max(80, totalRightRibbonCount * 7));
 
   if (selfLoopEntry) {
     selfLoopEntry.portThickness = Math.max(
@@ -1151,36 +1856,55 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   }
 
   leftCol.nodes.forEach((n) => {
-    n.portThickness = Math.max(2.2, (n.weight / leftTotalWeight) * targetLeftSpan);
+    (n.tokenFlows || []).forEach((tf) => {
+      tf.portThickness = Math.max(2.2, ((tf.weight || 0) / leftTotalWeight) * targetLeftSpan);
+    });
     if (n.hasCircularReturn) {
-      n.returnPortThickness = Math.max(2.4, (n.returnWeight / rightTotalWeight) * targetRightSpan);
+      (n.returnTokenFlows || []).forEach((rtf) => {
+        rtf.returnPortThickness = Math.max(2.4, ((rtf.weight || 0) / rightTotalWeight) * targetRightSpan);
+      });
     }
   });
+
   rightCol.nodes.forEach((n) => {
-    n.portThickness = Math.max(2.2, (n.weight / rightTotalWeight) * targetRightSpan);
+    (n.tokenFlows || []).forEach((tf) => {
+      tf.portThickness = Math.max(2.2, ((tf.weight || 0) / rightTotalWeight) * targetRightSpan);
+    });
   });
 
   const leftPortSpan =
-    leftCol.nodes.reduce((s, n) => s + n.portThickness, 0) +
+    leftCol.nodes.reduce(
+      (s, n) => s + (n.tokenFlows || []).reduce((ts, tf) => ts + tf.portThickness, 0),
+      0
+    ) +
     (selfLoopEntry ? selfLoopEntry.portThickness : 0) +
-    Math.max(0, totalLeftCount - 1) * leftGap;
-  const rightPortSpan =
-    rightCol.nodes.reduce((s, n) => s + n.portThickness, 0) +
-    circularNodes.reduce((s, n) => s + n.returnPortThickness, 0) +
-    (selfLoopEntry ? selfLoopEntry.portThickness : 0) +
-    Math.max(0, totalRightCount - 1) * rightGap;
+    Math.max(0, totalLeftRibbonCount - 1) * leftGap;
 
-  const hubCardH = Math.max(238, Math.max(leftPortSpan, rightPortSpan) + 44);
+  const rightPortSpan =
+    rightCol.nodes.reduce(
+      (s, n) => s + (n.tokenFlows || []).reduce((ts, tf) => ts + tf.portThickness, 0),
+      0
+    ) +
+    circularNodes.reduce(
+      (s, n) => s + (n.returnTokenFlows || []).reduce((ts, rtf) => ts + rtf.returnPortThickness, 0),
+      0
+    ) +
+    (selfLoopEntry ? selfLoopEntry.portThickness : 0) +
+    Math.max(0, totalRightRibbonCount - 1) * rightGap;
+
+  const activeTokensInHub = ALL_TOKEN_ORDER.filter(
+    (tk) => viewConfig.enabledTokens.has(tk) && ((totalInByToken.get(tk) || 0) > 0 || (totalOutByToken.get(tk) || 0) > 0)
+  );
+  const extraHubRowsH = Math.max(0, activeTokensInHub.length - 1) * 34;
+  const hubCardH = Math.max(238 + extraHubRowsH, Math.max(leftPortSpan, rightPortSpan) + 44);
   const hubX = (W - hubW) / 2;
 
-  // Position Hub comfortably near center while respecting top/bottom circular loop clearance
   const hubCenterY = Math.min(
     H - padYBottom - hubCardH / 2 - 10,
     Math.max(padYTop + hubCardH / 2 + 12, Math.min(360 + padYTop / 2, H / 2))
   );
   const hubY = hubCenterY - hubCardH / 2;
 
-  // Align shorter column around hubCenterY so small inflow/outflow sets aren't buried far down
   function alignColumnVertically(col) {
     if (col.nodes.length === 0) return;
     if (col.totalColH >= contentH - 4) return;
@@ -1193,7 +1917,31 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   alignColumnVertically(leftCol);
   alignColumnVertically(rightCol);
 
-  // Assign Left Inflow ribbon endpoints (with selfLoopEntry occupying the top slot if present)
+  // Helper to allocate non-overlapping vertical port slots on a node card's edge for 1..3 token ribbons
+  function assignNodeEdgeSlots(flowList, zoneTopY, zoneBottomY) {
+    const count = flowList.length;
+    if (count === 0) return;
+    const zoneH = Math.max(8, zoneBottomY - zoneTopY);
+    const subGap = count > 1 ? 2.2 : 0;
+    const availH = Math.max(count * 3.2, zoneH - (count - 1) * subGap);
+    const totalW = flowList.reduce((s, f) => s + (f.weight || 1), 0) || 1;
+
+    // Desired total ribbon span inside the zone
+    const maxAvgNorm = Math.max(...flowList.map((f) => f.normWeight || 0.2));
+    const targetSpan = Math.min(availH, Math.max(count * 4.2, availH * (0.38 + 0.56 * maxAvgNorm)));
+    const totalSpanWithGaps = targetSpan + (count - 1) * subGap;
+    let curY = zoneTopY + (zoneH - totalSpanWithGaps) / 2;
+
+    flowList.forEach((f) => {
+      const share = (f.weight || 1) / totalW;
+      const ribH = Math.max(3.2, share * targetSpan);
+      f.nodeY0 = curY;
+      f.nodeY1 = curY + ribH;
+      curY += ribH + subGap;
+    });
+  }
+
+  // Assign Left Inflow ribbon endpoints (supporting multiple token ribbons per node!)
   let curLeftPortY = hubCenterY - leftPortSpan / 2;
   if (selfLoopEntry) {
     selfLoopEntry.targetY0 = curLeftPortY;
@@ -1202,29 +1950,25 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   }
 
   leftCol.nodes.forEach((n) => {
+    const inFlows = n.tokenFlows || [];
     if (n.hasCircularReturn) {
-      // Upper half of right edge is Inflow (Node -> Hub), lower half is Circular Return (Hub -> Node)
-      const topHalfMidY = n.y + n.h * 0.3;
-      const botHalfMidY = n.y + n.h * 0.72;
-      const inRibbonH = Math.max(3.5, Math.min(n.h * 0.36, 5 + n.normWeight * (n.h * 0.32)));
-      const retRibbonH = Math.max(3.5, Math.min(n.h * 0.34, 4.5 + n.returnNormWeight * (n.h * 0.3)));
-
-      n.sourceY0 = topHalfMidY - inRibbonH / 2;
-      n.sourceY1 = topHalfMidY + inRibbonH / 2;
-
-      n.circTargetY0 = botHalfMidY - retRibbonH / 2;
-      n.circTargetY1 = botHalfMidY + retRibbonH / 2;
-      n.circRibbonThickness = Math.max(3, (retRibbonH + n.returnPortThickness) / 2);
+      const retFlows = n.returnTokenFlows || [];
+      const splitY = n.y + n.h * (inFlows.length >= retFlows.length ? 0.54 : 0.46);
+      assignNodeEdgeSlots(inFlows, n.y + 5, splitY - 2);
+      assignNodeEdgeSlots(retFlows, splitY + 2, n.y + n.h - 5);
+      retFlows.forEach((rtf) => {
+        const retRibH = rtf.nodeY1 - rtf.nodeY0;
+        rtf.circRibbonThickness = Math.max(3, (retRibH + rtf.returnPortThickness) / 2);
+      });
     } else {
-      const nodeRibbonH = Math.max(4, Math.min(n.h - 10, 6 + n.normWeight * (n.h - 14)));
-      const midNodeY = n.y + n.h / 2;
-      n.sourceY0 = midNodeY - nodeRibbonH / 2;
-      n.sourceY1 = midNodeY + nodeRibbonH / 2;
+      assignNodeEdgeSlots(inFlows, n.y + 5, n.y + n.h - 5);
     }
 
-    n.targetY0 = curLeftPortY;
-    n.targetY1 = curLeftPortY + n.portThickness;
-    curLeftPortY += n.portThickness + leftGap;
+    inFlows.forEach((tf) => {
+      tf.hubY0 = curLeftPortY;
+      tf.hubY1 = curLeftPortY + tf.portThickness;
+      curLeftPortY += tf.portThickness + leftGap;
+    });
   });
 
   // Partition circular nodes into top loops (above Hub center) and bottom loops (below Hub center)
@@ -1239,36 +1983,45 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     curRightPortY += selfLoopEntry.portThickness + rightGap;
   }
 
-  topCircularNodes.forEach((n, idx) => {
-    n.circSourceY0 = curRightPortY;
-    n.circSourceY1 = curRightPortY + n.returnPortThickness;
-    n.isTopLoop = true;
-    // Outermost loop (idx 0, highest node) arches highest over the Hub
-    n.loopOrder = topCircularNodes.length - 1 - idx;
-    curRightPortY += n.returnPortThickness + rightGap;
+  // Count total top circular sub-ribbons for clean non-overlapping arch ordering
+  const totalTopCircRibbons = topCircularNodes.reduce(
+    (s, n) => s + (n.returnTokenFlows?.length || 1),
+    0
+  );
+  let topCircCounter = 0;
+  topCircularNodes.forEach((n) => {
+    (n.returnTokenFlows || []).forEach((rtf) => {
+      rtf.circSourceY0 = curRightPortY;
+      rtf.circSourceY1 = curRightPortY + rtf.returnPortThickness;
+      rtf.isTopLoop = true;
+      rtf.loopOrder = totalTopCircRibbons - 1 - topCircCounter;
+      topCircCounter++;
+      curRightPortY += rtf.returnPortThickness + rightGap;
+    });
   });
 
   rightCol.nodes.forEach((n) => {
-    const nodeRibbonH = Math.max(4, Math.min(n.h - 10, 6 + n.normWeight * (n.h - 14)));
-    const midNodeY = n.y + n.h / 2;
-
-    n.sourceY0 = curRightPortY;
-    n.sourceY1 = curRightPortY + n.portThickness;
-    n.targetY0 = midNodeY - nodeRibbonH / 2;
-    n.targetY1 = midNodeY + nodeRibbonH / 2;
-    curRightPortY += n.portThickness + rightGap;
+    const outFlows = n.tokenFlows || [];
+    assignNodeEdgeSlots(outFlows, n.y + 5, n.y + n.h - 5);
+    outFlows.forEach((tf) => {
+      tf.hubY0 = curRightPortY;
+      tf.hubY1 = curRightPortY + tf.portThickness;
+      curRightPortY += tf.portThickness + rightGap;
+    });
   });
 
-  bottomCircularNodes.forEach((n, idx) => {
-    n.circSourceY0 = curRightPortY;
-    n.circSourceY1 = curRightPortY + n.returnPortThickness;
-    n.isTopLoop = false;
-    // Innermost loop (idx 0) arches closest under the Hub; lowest node arches deepest
-    n.loopOrder = idx;
-    curRightPortY += n.returnPortThickness + rightGap;
+  let botCircCounter = 0;
+  bottomCircularNodes.forEach((n) => {
+    (n.returnTokenFlows || []).forEach((rtf) => {
+      rtf.circSourceY0 = curRightPortY;
+      rtf.circSourceY1 = curRightPortY + rtf.returnPortThickness;
+      rtf.isTopLoop = false;
+      rtf.loopOrder = botCircCounter;
+      botCircCounter++;
+      curRightPortY += rtf.returnPortThickness + rightGap;
+    });
   });
 
-  // Helper to build closed Cubic Bezier ribbon path
   function buildRibbonPath(x0, y0Top, y0Bot, x1, y1Top, y1Bot) {
     const curvature = 0.46;
     const cx0 = x0 + (x1 - x0) * curvature;
@@ -1289,34 +2042,32 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     return `M ${x0} ${y0Mid} C ${cx0} ${y0Mid}, ${cx1} ${y1Mid}, ${x1} ${y1Mid}`;
   }
 
-  // Helper to build smooth G1-continuous circular return loop around the Hub (Hub Right -> Left Node Return Port)
-  function buildCircularLoopPath(n) {
+  function buildCircularLoopPathForSubFlow(rtf) {
     const xStart = hubX + hubW;
-    const yStart = (n.circSourceY0 + n.circSourceY1) / 2;
+    const yStart = (rtf.circSourceY0 + rtf.circSourceY1) / 2;
     const xEnd = padX + cardW;
-    const yEnd = (n.circTargetY0 + n.circTargetY1) / 2;
-    const order = n.loopOrder || 0;
+    const yEnd = (rtf.nodeY0 + rtf.nodeY1) / 2;
+    const order = rtf.loopOrder || 0;
     const selfClearance = selfLoopEntry ? 26 : 0;
     const apexX = hubX + hubW * 0.35;
 
-    const apexY = n.isTopLoop
-      ? Math.max(14, Math.min(hubY - 24 - selfClearance - order * 12, yEnd - 26))
-      : Math.min(H - 14, Math.max(hubY + hubCardH + 22 + order * 12, yEnd + 26));
+    const apexY = rtf.isTopLoop
+      ? Math.max(14, Math.min(hubY - 24 - selfClearance - order * 11, yEnd - 24))
+      : Math.min(H - 14, Math.max(hubY + hubCardH + 22 + order * 11, yEnd + 24));
 
-    const c1x = xStart + 54 + order * 12;
+    const c1x = xStart + 54 + order * 11;
     const c1y = yStart;
     const c2x = apexX + 82;
     const c2y = apexY;
 
     const c3x = apexX - 88;
     const c3y = apexY;
-    const c4x = xEnd + 66 + order * 10;
+    const c4x = xEnd + 66 + order * 9;
     const c4y = yEnd;
 
     return `M ${xStart} ${yStart} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${apexX} ${apexY} C ${c3x} ${c3y}, ${c4x} ${c4y}, ${xEnd} ${yEnd}`;
   }
 
-  // Helper to build Hub Self-Transfer Crown Loop (Hub Right Outflow Port -> Crown Arch -> Hub Left Inflow Port)
   function buildSelfLoopPath(selfNode) {
     const xStart = hubX + hubW;
     const yStart = (selfNode.sourceY0 + selfNode.sourceY1) / 2;
@@ -1336,9 +2087,10 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     };
   }
 
-  // Build SVG markup
+  // Build SVG markup (with distinct gradients for XTZ, tzBTC, and USDt flows)
   const defsMarkup = `
     <defs>
+      <!-- Native XTZ Gradients -->
       <linearGradient id="grad-inflow" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" stop-color="#10b981" stop-opacity="0.85" />
         <stop offset="55%" stop-color="#06b6d4" stop-opacity="0.65" />
@@ -1358,6 +2110,41 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         <stop offset="50%" stop-color="#ec4899" stop-opacity="0.8" />
         <stop offset="100%" stop-color="#a855f7" stop-opacity="0.9" />
       </linearGradient>
+
+      <!-- tzBTC (KT1PWx2mnDueood7fEmfbBDKx1D9BAnnXitn) Distinct Bitcoin Orange / Gold Gradients -->
+      <linearGradient id="grad-inflow-tzbtc" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#f7931a" stop-opacity="0.8" />
+        <stop offset="100%" stop-color="#ea580c" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-tzbtc" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#ea580c" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#f7931a" stop-opacity="0.8" />
+        <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-tzbtc" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#ea580c" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#f7931a" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#fde047" stop-opacity="0.92" />
+      </linearGradient>
+
+      <!-- USDt (KT1XnTn74bUtxHfDtBmm2bGZAQfhPbvKWR8o) Distinct Electric Cyan / Sky Gradients -->
+      <linearGradient id="grad-inflow-usdt" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#06b6d4" stop-opacity="0.8" />
+        <stop offset="100%" stop-color="#0284c7" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-usdt" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#0284c7" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#06b6d4" stop-opacity="0.8" />
+        <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-usdt" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#0284c7" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#06b6d4" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#67e8f9" stop-opacity="0.92" />
+      </linearGradient>
+
       <linearGradient id="grad-self-loop" x1="100%" y1="0%" x2="0%" y2="0%">
         <stop offset="0%" stop-color="#f43f5e" stop-opacity="0.95" />
         <stop offset="50%" stop-color="#38bdf8" stop-opacity="0.95" />
@@ -1370,52 +2157,64 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     </defs>
   `;
 
-  // Render ribbons
+  // Render ribbons (multiple ribbons per counterparty node when multiple tokens are present!)
   const leftRibbonX0 = padX + cardW;
   const leftRibbonX1 = hubX;
   const rightRibbonX0 = hubX + hubW;
   const rightRibbonX1 = W - padX - cardW;
 
   const inflowLinksMarkup = leftCol.nodes
-    .map((n) => {
-      const d = buildRibbonPath(leftRibbonX0, n.sourceY0, n.sourceY1, leftRibbonX1, n.targetY0, n.targetY1);
-      const centerD = buildCenterlinePath(
-        leftRibbonX0,
-        (n.sourceY0 + n.sourceY1) / 2,
-        leftRibbonX1,
-        (n.targetY0 + n.targetY1) / 2
-      );
-      const gradId = n.isSpecial ? 'url(#grad-special)' : 'url(#grad-inflow)';
-      return `
-        <g class="sankey-link-wrap" data-side="in" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}">
-          <path class="sankey-link sankey-ribbon-link" d="${d}" fill="${gradId}" fill-opacity="0.36" stroke="${n.isSpecial ? '#f59e0b' : '#10b981'}" stroke-width="0.6" stroke-opacity="0.45" />
-          <path class="sankey-link-flow" d="${centerD}" stroke-width="2" />
-        </g>
-      `;
-    })
+    .map((n) =>
+      (n.tokenFlows || [])
+        .map((tf) => {
+          const tokenDef = TOKEN_DEFINITIONS[tf.tokenKey || 'xtz'] || TOKEN_DEFINITIONS.xtz;
+          const d = buildRibbonPath(leftRibbonX0, tf.nodeY0, tf.nodeY1, leftRibbonX1, tf.hubY0, tf.hubY1);
+          const centerD = buildCenterlinePath(
+            leftRibbonX0,
+            (tf.nodeY0 + tf.nodeY1) / 2,
+            leftRibbonX1,
+            (tf.hubY0 + tf.hubY1) / 2
+          );
+          const gradId = tf.isSpecial && tf.tokenKey === 'xtz' ? 'url(#grad-special)' : tokenDef.gradInflow;
+          const strokeColor = tf.isSpecial && tf.tokenKey === 'xtz' ? '#f59e0b' : tokenDef.inflowColor;
+          return `
+            <g class="sankey-link-wrap" data-side="in" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-token="${escapeHtml(tf.tokenKey)}">
+              <path class="sankey-link sankey-ribbon-link" d="${d}" fill="${gradId}" fill-opacity="0.38" stroke="${strokeColor}" stroke-width="0.6" stroke-opacity="0.48" />
+              <path class="sankey-link-flow" d="${centerD}" stroke-width="2" />
+            </g>
+          `;
+        })
+        .join('')
+    )
     .join('');
 
   const circularLinksMarkup = circularNodes
-    .map((n) => {
-      const loopD = buildCircularLoopPath(n);
-      const strokeW = Math.max(3.5, Math.min(22, n.circRibbonThickness || 6)).toFixed(1);
-      return `
-        <g class="sankey-link-wrap sankey-circular-wrap" data-side="in" data-circular="true" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}">
-          <path class="sankey-link sankey-circular-link" d="${loopD}" fill="none" stroke="url(#grad-circular)" stroke-width="${strokeW}" stroke-opacity="0.46" stroke-linecap="butt" />
-          <path class="sankey-link-flow" d="${loopD}" stroke-width="2" />
-        </g>
-      `;
-    })
+    .map((n) =>
+      (n.returnTokenFlows || [])
+        .map((rtf) => {
+          const tokenDef = TOKEN_DEFINITIONS[rtf.tokenKey || 'xtz'] || TOKEN_DEFINITIONS.xtz;
+          const loopD = buildCircularLoopPathForSubFlow(rtf);
+          const strokeW = Math.max(3.5, Math.min(22, rtf.circRibbonThickness || 6)).toFixed(1);
+          return `
+            <g class="sankey-link-wrap sankey-circular-wrap" data-side="in" data-circular="true" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-token="${escapeHtml(rtf.tokenKey)}">
+              <path class="sankey-link sankey-circular-link" d="${loopD}" fill="none" stroke="${tokenDef.gradCircular}" stroke-width="${strokeW}" stroke-opacity="0.52" stroke-linecap="butt" />
+              <path class="sankey-link-flow" d="${loopD}" stroke-width="2" />
+            </g>
+          `;
+        })
+        .join('')
+    )
     .join('');
 
   let selfLoopMarkup = '';
   if (selfLoopEntry) {
     const { pathD, apexX, apexY } = buildSelfLoopPath(selfLoopEntry);
     const strokeW = Math.max(4, Math.min(18, selfLoopEntry.portThickness || 6)).toFixed(1);
-    const pillLabel = `↺ Self: ${formatTez(selfLoopEntry.amount, true)} (${selfLoopEntry.count})`;
+    const selfParts = (selfLoopEntry.tokenFlows || []).map((tf) => formatTokenAmount(tf.amount, tf.tokenKey, true));
+    const pillLabel = `↺ Self: ${selfParts.join(' • ')} (${selfLoopEntry.count})`;
     const pillW = Math.max(114, pillLabel.length * 6.4 + 18);
     selfLoopMarkup = `
-      <g class="sankey-link-wrap sankey-self-loop-wrap" id="sankey-self-loop" data-side="self" data-circular="true" data-index="-1" data-addr="${escapeHtml(targetAddress)}" style="cursor: pointer;">
+      <g class="sankey-link-wrap sankey-self-loop-wrap" id="sankey-self-loop" data-side="self" data-circular="true" data-index="-1" data-addr="${escapeHtml(targetAddress)}" data-flow-key="${escapeHtml(targetAddress)}" style="cursor: pointer;">
         <path class="sankey-link sankey-circular-link sankey-self-link" d="${pathD}" fill="none" stroke="url(#grad-self-loop)" stroke-width="${strokeW}" stroke-opacity="0.58" stroke-linecap="butt" />
         <path class="sankey-link-flow" d="${pathD}" stroke-width="2.2" />
         <rect x="${apexX - pillW / 2}" y="${apexY - 11}" width="${pillW}" height="20" rx="10"
@@ -1428,102 +2227,189 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   }
 
   const outflowLinksMarkup = rightCol.nodes
-    .map((n) => {
-      const d = buildRibbonPath(rightRibbonX0, n.sourceY0, n.sourceY1, rightRibbonX1, n.targetY0, n.targetY1);
-      const centerD = buildCenterlinePath(
-        rightRibbonX0,
-        (n.sourceY0 + n.sourceY1) / 2,
-        rightRibbonX1,
-        (n.targetY0 + n.targetY1) / 2
-      );
-      return `
-        <g class="sankey-link-wrap" data-side="out" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}">
-          <path class="sankey-link sankey-ribbon-link" d="${d}" fill="url(#grad-outflow)" fill-opacity="0.36" stroke="#f43f5e" stroke-width="0.6" stroke-opacity="0.45" />
-          <path class="sankey-link-flow" d="${centerD}" stroke-width="2" />
-        </g>
-      `;
-    })
+    .map((n) =>
+      (n.tokenFlows || [])
+        .map((tf) => {
+          const tokenDef = TOKEN_DEFINITIONS[tf.tokenKey || 'xtz'] || TOKEN_DEFINITIONS.xtz;
+          const d = buildRibbonPath(rightRibbonX0, tf.hubY0, tf.hubY1, rightRibbonX1, tf.nodeY0, tf.nodeY1);
+          const centerD = buildCenterlinePath(
+            rightRibbonX0,
+            (tf.hubY0 + tf.hubY1) / 2,
+            rightRibbonX1,
+            (tf.nodeY0 + tf.nodeY1) / 2
+          );
+          return `
+            <g class="sankey-link-wrap" data-side="out" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-token="${escapeHtml(tf.tokenKey)}">
+              <path class="sankey-link sankey-ribbon-link" d="${d}" fill="${tokenDef.gradOutflow}" fill-opacity="0.38" stroke="${tokenDef.outflowColor}" stroke-width="0.6" stroke-opacity="0.48" />
+              <path class="sankey-link-flow" d="${centerD}" stroke-width="2" />
+            </g>
+          `;
+        })
+        .join('')
+    )
     .join('');
 
-  // Render Node Card helper
+  // Render Unified Node Card (supports 1, 2, or 3 token flows + circular returns on a single card!)
   function renderNodeCard(n, side) {
     const isLeft = side === 'in';
-    const accentColor = n.isSpecial ? '#f59e0b' : n.isSelfTransfer ? '#38bdf8' : isLeft ? '#10b981' : '#f43f5e';
+    const inFlows = n.tokenFlows || [];
+    const retFlows = n.hasCircularReturn ? n.returnTokenFlows || [] : [];
+    const primaryTf = inFlows[0] || { tokenKey: 'xtz', sharePct: 0, amount: 0 };
+    const primaryDef = TOKEN_DEFINITIONS[primaryTf.tokenKey] || TOKEN_DEFINITIONS.xtz;
+
+    const getFlowTextColor = (tk, isReturn = false) => {
+      const def = TOKEN_DEFINITIONS[tk] || TOKEN_DEFINITIONS.xtz;
+      if (isReturn) return tk === 'xtz' ? '#f472b6' : def.returnTextColor;
+      if (tk !== 'xtz') return isLeft ? def.inflowLight : def.outflowLight;
+      return n.isSpecial ? '#f59e0b' : isLeft ? '#10b981' : '#f43f5e';
+    };
+
+    const getPortSegmentColor = (tk, isReturn = false) => {
+      const def = TOKEN_DEFINITIONS[tk] || TOKEN_DEFINITIONS.xtz;
+      if (isReturn) return def.returnColor;
+      if (tk !== 'xtz') return def.inflowColor;
+      return n.isSpecial ? '#f59e0b' : isLeft ? '#10b981' : '#f43f5e';
+    };
+
     const shareBarW = Math.max(4, Math.min(n.w - 12, (n.sharePct / 100) * (n.w - 12)));
-    const primaryTitle = n.alias ? truncateText(n.alias, 19) : shortenAddress(n.realAddress);
+    const allNodeTokenKeys = Array.from(
+      new Set([...inFlows.map((tf) => tf.tokenKey), ...retFlows.map((rtf) => rtf.tokenKey)])
+    );
+    const hasFaOnNode = allNodeTokenKeys.some((tk) => tk !== 'xtz');
+    const showTokenTags = viewConfig.faEnabled || hasFaOnNode;
+
     const biBadge = n.isSelfTransfer
-      ? ' ↺ (Self)'
+      ? ' ↺'
       : n.hasCircularReturn
       ? ' ↺'
       : n.isBidirectional
       ? ' ⇄'
       : '';
-    const subTitle = n.isAggregate
-      ? `${n.count.toLocaleString()} txes combined • Click to expand`
-      : n.hasCircularReturn
-      ? `${n.alias ? shortenAddress(n.realAddress) + ' • ' : ''}${n.count} in / ${n.returnCount} out`
-      : `${n.alias ? shortenAddress(n.realAddress) + ' • ' : ''}${n.count} tx${n.count > 1 ? 'es' : ''}`;
 
-    const amountStr = formatTez(n.amount, true);
-    const returnAmountStr = n.hasCircularReturn ? `↺ -${formatTez(n.returnAmount, true)}` : '';
-    const pctStr = `${n.sharePct >= 10 ? n.sharePct.toFixed(1) : n.sharePct.toFixed(2)}%`;
+    const tagPlain = showTokenTags
+      ? ` [${allNodeTokenKeys.map((tk) => (TOKEN_DEFINITIONS[tk] || TOKEN_DEFINITIONS.xtz).ticker).join('·')}]`
+      : '';
+    const suffixLen = tagPlain.length + biBadge.length;
+    const maxTitleChars = Math.max(8, 22 - Math.ceil(suffixLen * 0.78));
+    const rawBaseTitle = n.alias
+      ? n.alias
+      : suffixLen >= 10
+      ? compactAddress(n.realAddress)
+      : shortenAddress(n.realAddress);
+    const primaryTitle = truncateText(rawBaseTitle, maxTitleChars);
+
+    const tokenTagsMarkup = showTokenTags
+      ? `<tspan fill="#64748b" font-size="9.2" font-family="JetBrains Mono, monospace"> [</tspan>` +
+        allNodeTokenKeys
+          .map((tk) => {
+            const def = TOKEN_DEFINITIONS[tk] || TOKEN_DEFINITIONS.xtz;
+            return `<tspan fill="${def.badgeText}" font-size="9.2" font-family="JetBrains Mono, monospace">${escapeHtml(def.ticker)}</tspan>`;
+          })
+          .join('<tspan fill="#64748b" font-size="9.2" font-family="JetBrains Mono, monospace">·</tspan>') +
+        `<tspan fill="#64748b" font-size="9.2" font-family="JetBrains Mono, monospace">]</tspan>`
+      : '';
+
+    // Concise subtitle so in/out counts and address never collide with right-side volume labels
+    const subTitle = n.isAggregate
+      ? `${n.count.toLocaleString()} txes • Tap to expand`
+      : n.hasCircularReturn
+      ? `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count} in / ${n.returnCount} out`
+      : `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count} tx${n.count > 1 ? 'es' : ''}`;
 
     const portBarX = isLeft ? n.x + n.w - 5 : n.x;
     const inspectBtnX = isLeft ? n.x + 8 : n.x + n.w - 28;
     const textLeftX = isLeft ? n.x + 34 : n.x + 14;
     const amountRightX = isLeft ? n.x + n.w - 12 : n.x + n.w - 34;
-
-    const subFontSize =
-      n.hasCircularReturn && subTitle.length + returnAmountStr.length > 36 ? '9.1' : '10.2';
-
     const midY = n.y + n.h / 2;
 
-    const portStripMarkup = n.hasCircularReturn
-      ? `
-        <rect x="${portBarX}" y="${n.y + 4}" width="5" height="${Math.max(8, n.h / 2 - 5)}" rx="2.5" fill="#10b981" />
-        <rect x="${portBarX}" y="${n.y + n.h / 2 + 1}" width="5" height="${Math.max(8, n.h / 2 - 5)}" rx="2.5" fill="#ec4899" />
-      `
-      : `<rect x="${portBarX}" y="${n.y + 4}" width="5" height="${n.h - 8}" rx="2.5" fill="${accentColor}" />`;
+    // Build segmented inner port accent strip matching every ribbon attached to this node
+    const portSegments = [
+      ...inFlows.map((tf) => ({
+        y0: tf.nodeY0,
+        y1: tf.nodeY1,
+        color: getPortSegmentColor(tf.tokenKey, false)
+      })),
+      ...retFlows.map((rtf) => ({
+        y0: rtf.nodeY0,
+        y1: rtf.nodeY1,
+        color: getPortSegmentColor(rtf.tokenKey, true)
+      }))
+    ];
 
-    const rightMetricsMarkup = n.hasCircularReturn
-      ? `
-        <text x="${amountRightX}" y="${midY - 6}" text-anchor="end" fill="#10b981" font-family="JetBrains Mono, monospace" font-size="11.5" font-weight="700">
-          +${escapeHtml(amountStr)}
-        </text>
-        <text x="${amountRightX}" y="${midY + 11}" text-anchor="end" fill="#f472b6" font-family="JetBrains Mono, monospace" font-size="10.2" font-weight="600">
-          ${escapeHtml(returnAmountStr)}
-        </text>
-      `
-      : `
-        <text x="${amountRightX}" y="${midY - 4}" text-anchor="end" fill="${accentColor}" font-family="JetBrains Mono, monospace" font-size="12" font-weight="700">
-          ${escapeHtml(amountStr)}
-        </text>
-        <text x="${amountRightX}" y="${midY + 12}" text-anchor="end" fill="#64748b" font-family="JetBrains Mono, monospace" font-size="10">
-          ${escapeHtml(pctStr)}
-        </text>
+    const portStripMarkup =
+      portSegments.length === 1 && !n.hasCircularReturn
+        ? `<rect x="${portBarX}" y="${n.y + 4}" width="5" height="${n.h - 8}" rx="2.5" fill="${portSegments[0].color}" />`
+        : portSegments
+            .map((seg) => {
+              const segH = Math.max(4, seg.y1 - seg.y0);
+              return `<rect x="${portBarX}" y="${seg.y0}" width="5" height="${segH}" rx="2.2" fill="${seg.color}" />`;
+            })
+            .join('');
+
+    // Build right-aligned amount lines (1 line if single token, or stacked colored lines for multi-token / circular return)
+    const metricLines = [];
+    inFlows.forEach((tf) => {
+      const sign = n.hasCircularReturn || inFlows.length > 1 ? (isLeft ? '+' : '-') : '';
+      metricLines.push({
+        text: `${sign}${formatTokenAmount(tf.amount, tf.tokenKey, true)}`,
+        color: getFlowTextColor(tf.tokenKey, false),
+        fontSize: inFlows.length + retFlows.length > 2 ? '10.2' : '11.2',
+        fontWeight: '700'
+      });
+    });
+    retFlows.forEach((rtf) => {
+      metricLines.push({
+        text: `↺ -${formatTokenAmount(rtf.amount, rtf.tokenKey, true)}`,
+        color: getFlowTextColor(rtf.tokenKey, true),
+        fontSize: inFlows.length + retFlows.length > 2 ? '9.6' : '10.1',
+        fontWeight: '600'
+      });
+    });
+
+    let rightMetricsMarkup = '';
+    if (metricLines.length === 1 && !n.hasCircularReturn) {
+      const pctNumStr = `${primaryTf.sharePct >= 10 ? primaryTf.sharePct.toFixed(1) : primaryTf.sharePct.toFixed(2)}%`;
+      const pctStr = showTokenTags ? `${pctNumStr} ${primaryDef.ticker}` : pctNumStr;
+      rightMetricsMarkup = `
+        <text class="node-right-text" x="${amountRightX}" y="${midY - 4}" text-anchor="end" fill="${metricLines[0].color}" font-family="JetBrains Mono, monospace" font-size="11.6" font-weight="700">${escapeHtml(metricLines[0].text)}</text>
+        <text class="node-right-text" x="${amountRightX}" y="${midY + 12}" text-anchor="end" fill="#64748b" font-family="JetBrains Mono, monospace" font-size="9.8">${escapeHtml(pctStr)}</text>
       `;
+    } else {
+      const lineStep = metricLines.length >= 4 ? 12.5 : metricLines.length === 3 ? 13.5 : 15;
+      const blockH = (metricLines.length - 1) * lineStep;
+      const startY = midY - blockH / 2 + 3.5;
+      rightMetricsMarkup = metricLines
+        .map(
+          (line, lIdx) =>
+            `<text class="node-right-text" x="${amountRightX}" y="${startY + lIdx * lineStep}" text-anchor="end" fill="${line.color}" font-family="JetBrains Mono, monospace" font-size="${line.fontSize}" font-weight="${line.fontWeight}">${escapeHtml(line.text)}</text>`
+        )
+        .join('');
+    }
+
+    const cardStroke =
+      allNodeTokenKeys.length > 1
+        ? 'rgba(165, 180, 252, 0.48)'
+        : hasFaOnNode
+        ? primaryDef.cardBorder
+        : n.hasCircularReturn
+        ? 'rgba(236, 72, 153, 0.55)'
+        : n.isBidirectional
+        ? 'rgba(129, 140, 248, 0.5)'
+        : 'rgba(255, 255, 255, 0.1)';
 
     return `
-      <g class="sankey-node-group" data-side="${side}" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}">
+      <g class="sankey-node-group" data-side="${side}" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-left-x="${textLeftX}" data-right-x="${amountRightX}">
         <!-- Base Card -->
         <rect class="sankey-node-card" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="9"
               fill="${n.isAggregate ? 'rgba(30, 41, 82, 0.85)' : 'rgba(15, 20, 44, 0.88)'}"
-              stroke="${
-                n.isSelfTransfer
-                  ? 'rgba(56, 189, 248, 0.6)'
-                  : n.hasCircularReturn
-                  ? 'rgba(236, 72, 153, 0.55)'
-                  : n.isBidirectional
-                  ? 'rgba(129, 140, 248, 0.5)'
-                  : 'rgba(255, 255, 255, 0.1)'
-              }"
+              stroke="${cardStroke}"
               stroke-width="1" />
 
         <!-- Subtle Volume Share Progress Bar along bottom -->
         <rect x="${isLeft ? n.x + n.w - 6 - shareBarW : n.x + 6}" y="${n.y + n.h - 3}" width="${shareBarW}" height="2" rx="1"
-              fill="${accentColor}" fill-opacity="0.65" />
+              fill="${getPortSegmentColor(primaryTf.tokenKey, false)}" fill-opacity="0.7" />
 
-        <!-- Inner Port Accent Strip -->
+        <!-- Segmented Inner Port Accent Strip -->
         ${portStripMarkup}
 
         <!-- Inspect Drawer Trigger Button (⋯) -->
@@ -1536,17 +2422,13 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
             : ''
         }
 
-        <!-- Primary Label (Alias or Short Address) -->
-        <text x="${textLeftX}" y="${midY - 4}" fill="#f8fafc" font-family="Inter, sans-serif" font-size="12.5" font-weight="600">
-          ${escapeHtml(primaryTitle)}${escapeHtml(biBadge)}
-        </text>
+        <!-- Primary Label (Alias or Short Address + Multi-Token Tags) -->
+        <text class="node-left-text" x="${textLeftX}" y="${midY - 4}" fill="#f8fafc" font-family="Inter, sans-serif" font-size="11.8" font-weight="600">${escapeHtml(primaryTitle)}${tokenTagsMarkup}${escapeHtml(biBadge)}</text>
 
-        <!-- Secondary Meta (Address & Tx Count) -->
-        <text x="${textLeftX}" y="${midY + 12}" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="${subFontSize}">
-          ${escapeHtml(subTitle)}
-        </text>
+        <!-- Secondary Meta (Address & Tx Count / In-Out Count) -->
+        <text class="node-left-text" x="${textLeftX}" y="${midY + 12}" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="9.8">${escapeHtml(subTitle)}</text>
 
-        <!-- Right-aligned Amount & Share % / Circular Return -->
+        <!-- Right-aligned Multi-Token Amounts -->
         ${rightMetricsMarkup}
       </g>
     `;
@@ -1555,16 +2437,44 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   const leftNodesMarkup = leftCol.nodes.map((n) => renderNodeCard(n, 'in')).join('');
   const rightNodesMarkup = rightCol.nodes.map((n) => renderNodeCard(n, 'out')).join('');
 
-  // Render Center Target Account Hub (content centered around hubCenterY)
+  // Render Center Target Account Hub
   const hubRawAlias = addressToAliasMap.get(targetAddress) || currentAccountInfo?.alias || '';
   const hubTitle = truncateText(hubRawAlias || shortenAddress(targetAddress), 22);
   const hubShortAddr = shortenAddress(targetAddress);
   const hubInitial = (hubRawAlias || targetAddress || 'T').replace(/^~/, '').charAt(0).toUpperCase();
   const hubAvatarUrl = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(targetAddress)}`;
   const hubMidX = hubX + hubW / 2;
-  const contentTopY = hubCenterY - 96;
+  const contentTopY = hubCenterY - 96 - Math.floor(extraHubRowsH / 2);
   const avatarCy = contentTopY + 46;
   const avatarR = 19;
+
+  const tokensForHubDisplay =
+    activeTokensInHub.length > 0
+      ? activeTokensInHub
+      : [[...viewConfig.enabledTokens][0] || 'xtz'];
+
+  const hubTokenMetricsMarkup = tokensForHubDisplay
+    .map((tk, idx) => {
+      const yBase = contentTopY + 132 + idx * 34;
+      const inVal = totalInByToken.get(tk) || 0;
+      const outVal = totalOutByToken.get(tk) || 0;
+      const def = TOKEN_DEFINITIONS[tk] || TOKEN_DEFINITIONS.xtz;
+      const inColor = tk === 'xtz' ? '#34d399' : def.inflowLight;
+      const outColor = tk === 'xtz' ? '#fb7185' : def.outflowLight;
+      const dotMarkup =
+        tokensForHubDisplay.length > 1
+          ? `<tspan fill="${def.badgeText}" font-size="9.5">● </tspan>`
+          : '';
+      return `
+        <text class="hub-row-left" x="${hubX + 18}" y="${yBase}" fill="#94a3b8" font-family="Inter, sans-serif" font-size="10">${dotMarkup}In</text>
+        <text class="hub-row-right" x="${hubX + hubW - 18}" y="${yBase}" text-anchor="end" fill="${inColor}" font-family="JetBrains Mono, monospace" font-size="10.8" font-weight="700">+${escapeHtml(formatTokenAmount(inVal, tk, true))}</text>
+        <text class="hub-row-left" x="${hubX + 18}" y="${yBase + 15}" fill="#94a3b8" font-family="Inter, sans-serif" font-size="10">${dotMarkup}Out</text>
+        <text class="hub-row-right" x="${hubX + hubW - 18}" y="${yBase + 15}" text-anchor="end" fill="${outColor}" font-family="JetBrains Mono, monospace" font-size="10.8" font-weight="700">-${escapeHtml(formatTokenAmount(outVal, tk, true))}</text>
+      `;
+    })
+    .join('');
+
+  const hubFooterY = contentTopY + 132 + tokensForHubDisplay.length * 34 + 12;
 
   const centerHubMarkup = `
     <g class="sankey-hub-group" id="sankey-center-hub" style="cursor: pointer;">
@@ -1582,14 +2492,14 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
 
       <!-- Left Inflow Port Rail -->
       ${
-        totalLeftCount > 0
+        totalLeftRibbonCount > 0
           ? `<rect x="${hubX}" y="${hubCenterY - leftPortSpan / 2}" width="6" height="${leftPortSpan}" rx="3" fill="#10b981" />`
           : ''
       }
 
       <!-- Right Outflow Port Rail -->
       ${
-        totalRightCount > 0
+        totalRightRibbonCount > 0
           ? `<rect x="${hubX + hubW - 6}" y="${hubCenterY - rightPortSpan / 2}" width="6" height="${rightPortSpan}" rx="3" fill="#f43f5e" />`
           : ''
       }
@@ -1600,7 +2510,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         TARGET HUB
       </text>
 
-      <!-- Hub Avatar (between TARGET HUB label and Alias/Address) -->
+      <!-- Hub Avatar -->
       <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR}" fill="#312e81" />
       <text x="${hubMidX}" y="${avatarCy + 5}" text-anchor="middle" fill="#c7d2fe" font-family="Space Grotesk, Inter, sans-serif" font-size="14" font-weight="700">
         ${escapeHtml(hubInitial)}
@@ -1609,36 +2519,23 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR + 0.5}" fill="none" stroke="#818cf8" stroke-width="1.5" />
 
       <!-- Target Alias & Short Address -->
-      <text x="${hubMidX}" y="${contentTopY + 84}" text-anchor="middle" fill="#ffffff" font-family="Space Grotesk, Inter, sans-serif" font-size="14.5" font-weight="700">
-        ${escapeHtml(hubTitle)}
-      </text>
-      <text x="${hubMidX}" y="${contentTopY + 101}" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="11">
-        ${escapeHtml(hubShortAddr)}
-      </text>
+      <text class="hub-title-text" x="${hubMidX}" y="${contentTopY + 84}" text-anchor="middle" fill="#ffffff" font-family="Space Grotesk, Inter, sans-serif" font-size="14.5" font-weight="700">${escapeHtml(hubTitle)}</text>
+      <text x="${hubMidX}" y="${contentTopY + 101}" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="11">${escapeHtml(hubShortAddr)}</text>
 
       <!-- Divider -->
       <line x1="${hubX + 20}" y1="${contentTopY + 114}" x2="${hubX + hubW - 20}" y2="${contentTopY + 114}" stroke="rgba(255,255,255,0.1)" />
 
-      <!-- Hub Inflow Metric -->
-      <text x="${hubX + 22}" y="${contentTopY + 135}" fill="#94a3b8" font-family="Inter, sans-serif" font-size="10.5">In (${rawInflows.length})</text>
-      <text x="${hubX + hubW - 22}" y="${contentTopY + 135}" text-anchor="end" fill="#34d399" font-family="JetBrains Mono, monospace" font-size="11.5" font-weight="700">
-        +${escapeHtml(formatTez(totalInAmount, true))}
-      </text>
-
-      <!-- Hub Outflow Metric -->
-      <text x="${hubX + 22}" y="${contentTopY + 156}" fill="#94a3b8" font-family="Inter, sans-serif" font-size="10.5">Out (${externalRawOutflows.length})</text>
-      <text x="${hubX + hubW - 22}" y="${contentTopY + 156}" text-anchor="end" fill="#fb7185" font-family="JetBrains Mono, monospace" font-size="11.5" font-weight="700">
-        -${escapeHtml(formatTez(totalOutAmount, true))}
-      </text>
+      <!-- Hub Per-Token Inflow & Outflow Metrics -->
+      ${hubTokenMetricsMarkup}
 
       <!-- Hub Footer Hint -->
-      <text x="${hubMidX}" y="${contentTopY + 182}" text-anchor="middle" fill="#818cf8" font-family="Inter, sans-serif" font-size="10">
+      <text x="${hubMidX}" y="${hubFooterY}" text-anchor="middle" fill="#818cf8" font-family="Inter, sans-serif" font-size="10">
         Click to copy address
       </text>
     </g>
   `;
 
-  const isDense = leftCol.nodes.length + rightCol.nodes.length > 120;
+  const isDense = totalLeftRibbonCount + totalRightRibbonCount > 120;
 
   container.innerHTML = `
     <svg class="sankey-svg${isDense ? ' dense-mode' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
@@ -1659,7 +2556,26 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     </svg>
   `;
 
-  // Bind Hover, Click, and Inspector Events
+  fitSvgNodeLabels(container.querySelector('.sankey-svg'), hubW);
+
+  if (viewConfig.faEnabled) {
+    const sampleRefs = [];
+    const visNodes = [...leftCol.nodes, ...rightCol.nodes];
+    for (let i = 0; i < visNodes.length && sampleRefs.length < 75; i++) {
+      const n = visNodes[i];
+      if (n.txHashes) {
+        for (let j = 0; j < n.txHashes.length && sampleRefs.length < 75; j++) {
+          if (String(n.txHashes[j]).startsWith('txid:')) {
+            sampleRefs.push(n.txHashes[j]);
+          }
+        }
+      }
+    }
+    if (sampleRefs.length > 0) {
+      resolveTxRefsToHashes(sampleRefs).catch(() => {});
+    }
+  }
+
   bindSankeyInteractions(
     container,
     targetAddress,
@@ -1671,6 +2587,78 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     addressToAliasMap,
     txHashesMap
   );
+}
+
+// ============================================================================
+// Mobile & Cross-Browser SVG Text Collision Prevention
+// Dynamically measures rendered SVG text widths and clamps any overflowing
+// left/right node or hub labels so they can never overlap on mobile devices
+// ============================================================================
+
+function fitSvgNodeLabels(svgEl, hubW = 238) {
+  if (!svgEl) return;
+  try {
+    svgEl.querySelectorAll('.sankey-node-group').forEach((group) => {
+      const leftX = parseFloat(group.dataset.leftX);
+      const rightX = parseFloat(group.dataset.rightX);
+      if (isNaN(leftX) || isNaN(rightX) || rightX <= leftX) return;
+      const totalSpan = rightX - leftX;
+      const leftEls = group.querySelectorAll('.node-left-text');
+      const rightEls = group.querySelectorAll('.node-right-text');
+
+      let maxRightW = 0;
+      const maxAllowedRightW = Math.floor(totalSpan * 0.45);
+      rightEls.forEach((rEl) => {
+        const rw = rEl.getComputedTextLength ? rEl.getComputedTextLength() : 0;
+        if (rw > maxAllowedRightW && maxAllowedRightW > 40) {
+          rEl.setAttribute('textLength', String(maxAllowedRightW));
+          rEl.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+          if (maxAllowedRightW > maxRightW) maxRightW = maxAllowedRightW;
+        } else if (rw > maxRightW) {
+          maxRightW = rw;
+        }
+      });
+
+      const availLeftW = Math.max(68, Math.floor(totalSpan - maxRightW - 10));
+      leftEls.forEach((lEl) => {
+        const lw = lEl.getComputedTextLength ? lEl.getComputedTextLength() : 0;
+        if (lw > availLeftW) {
+          lEl.setAttribute('textLength', String(availLeftW));
+          lEl.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+        }
+      });
+    });
+
+    const hubGroup = svgEl.querySelector('#sankey-center-hub');
+    if (hubGroup) {
+      const hubInnerW = hubW - 36;
+      const hubTitleEl = hubGroup.querySelector('.hub-title-text');
+      if (hubTitleEl && hubTitleEl.getComputedTextLength) {
+        const tw = hubTitleEl.getComputedTextLength();
+        if (tw > hubInnerW) {
+          hubTitleEl.setAttribute('textLength', String(hubInnerW));
+          hubTitleEl.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+        }
+      }
+
+      const hubLefts = hubGroup.querySelectorAll('.hub-row-left');
+      const hubRights = hubGroup.querySelectorAll('.hub-row-right');
+      const rowCount = Math.min(hubLefts.length, hubRights.length);
+      for (let i = 0; i < rowCount; i++) {
+        const lEl = hubLefts[i];
+        const rEl = hubRights[i];
+        const lw = lEl.getComputedTextLength ? lEl.getComputedTextLength() : 32;
+        const rw = rEl.getComputedTextLength ? rEl.getComputedTextLength() : 0;
+        const maxR = Math.max(60, Math.floor(hubInnerW - lw - 8));
+        if (rw > maxR) {
+          rEl.setAttribute('textLength', String(maxR));
+          rEl.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+        }
+      }
+    }
+  } catch {
+    // Ignore if SVG is not yet attached or hidden
+  }
 }
 
 // ============================================================================
@@ -1692,7 +2680,6 @@ function bindSankeyInteractions(
   const svgEl = container.querySelector('.sankey-svg');
   if (!svgEl) return;
 
-  // Build O(1) lookup tables by address and by (side:index) so hover never scans O(N) DOM elements
   const addrElementsMap = new Map();
   const keyElementsMap = new Map();
 
@@ -1723,7 +2710,7 @@ function bindSankeyInteractions(
     const key = `${lw.dataset.side}:${lw.dataset.index}`;
     const pathEl = lw.querySelector('.sankey-link');
     const flowEl = lw.querySelector('.sankey-link-flow');
-    registerIndexedEl(key, lw.dataset.addr, 'links', { pathEl, flowEl });
+    registerIndexedEl(key, lw.dataset.addr, 'links', { pathEl, flowEl, token: lw.dataset.token });
   });
 
   let activeNodes = [];
@@ -1755,9 +2742,8 @@ function bindSankeyInteractions(
     if (tooltip) tooltip.style.display = 'none';
   }
 
-  function highlightConnection(addr, side, index) {
+  function highlightConnection(addr, side, index, specificToken = null) {
     const key = `${side}:${index}`;
-    // Clear only previously highlighted 1-4 elements (O(1))
     for (let i = 0; i < activeLinks.length; i++) {
       activeLinks[i].pathEl.classList.remove('highlighted');
       activeLinks[i].flowEl.classList.remove('active');
@@ -1778,7 +2764,11 @@ function bindSankeyInteractions(
       return;
     }
 
-    activeLinks = bucket.links;
+    // If hovering a specific token ribbon among multiple ribbons, highlight that token's ribbon(s) + the node card
+    activeLinks = specificToken
+      ? bucket.links.filter((l) => !l.token || l.token === specificToken)
+      : bucket.links;
+    if (activeLinks.length === 0) activeLinks = bucket.links;
     activeNodes = bucket.nodes;
     svgEl.classList.add('has-highlight');
 
@@ -1798,66 +2788,76 @@ function bindSankeyInteractions(
     cachedTooltipH = rect.height || 150;
   }
 
-  function showNodeTooltip(evt, entry, side) {
+  function showNodeTooltip(evt, entry, side, hoveredToken = null) {
     if (!tooltip || !entry) return;
     const isLeft = side === 'in';
-    const badgeClass = entry.isSelfTransfer ? 'hub' : isLeft ? 'inflow' : 'outflow';
+    const inFlows = entry.tokenFlows || [];
+    const retFlows = entry.hasCircularReturn ? entry.returnTokenFlows || [] : [];
+
+    const badgeClass = entry.isSelfTransfer
+      ? 'hub'
+      : hoveredToken && hoveredToken !== 'xtz'
+      ? hoveredToken
+      : inFlows.length === 1 && inFlows[0].tokenKey !== 'xtz'
+      ? inFlows[0].tokenKey
+      : isLeft
+      ? 'inflow'
+      : 'outflow';
+
     const badgeText = entry.isSpecial
       ? 'Protocol Flow'
       : entry.isSelfTransfer
-      ? 'Self-Transfer (Hub ↺ Hub)'
+      ? 'Self-Transfer (↺)'
       : entry.hasCircularReturn
-      ? 'Circular Flow ↺'
+      ? `Circular Flow ↺ (${inFlows.length + retFlows.length} ribbons)`
       : isLeft
       ? entry.isBidirectional
         ? 'Inflow • Bidirectional ⇄'
-        : 'Inflow (Sender)'
+        : `Inflow (${inFlows.length > 1 ? inFlows.length + ' Tokens' : 'Sender'})`
       : entry.isBidirectional
       ? 'Outflow • Bidirectional ⇄'
-      : 'Outflow (Receiver)';
+      : `Outflow (${inFlows.length > 1 ? inFlows.length + ' Tokens' : 'Receiver'})`;
 
     const startStr = formatDateShort(entry.dateRange?.start);
     const endStr = formatDateShort(entry.dateRange?.end);
     const dateSpan = startStr === endStr ? startStr : `${startStr} → ${endStr}`;
 
-    const metricsGridHtml = entry.hasCircularReturn
-      ? `
+    const rowsHtml = [];
+    inFlows.forEach((tf) => {
+      const def = TOKEN_DEFINITIONS[tf.tokenKey] || TOKEN_DEFINITIONS.xtz;
+      const color = tf.tokenKey === 'xtz' ? (isLeft ? 'var(--inflow-light)' : 'var(--outflow-light)') : def.inflowLight;
+      const isFocused = hoveredToken && hoveredToken === tf.tokenKey;
+      const focusStyle = isFocused ? `border: 1px solid ${def.badgeStroke}; background: ${def.badgeBg};` : '';
+      rowsHtml.push(`
         <div class="tt-grid">
-          <div class="tt-metric">
-            <div class="tt-metric-lbl">Sent to Hub (${entry.count} tx)</div>
-            <div class="tt-metric-val" style="color: var(--inflow-light);">+${escapeHtml(formatTez(entry.amount))}</div>
+          <div class="tt-metric" style="${focusStyle}">
+            <div class="tt-metric-lbl">${escapeHtml(def.ticker)} ${isLeft ? 'Sent to Hub' : 'Received'}</div>
+            <div class="tt-metric-val" style="color: ${color};">${isLeft ? '+' : '-'}${escapeHtml(formatTokenAmount(tf.amount, tf.tokenKey))}</div>
           </div>
-          <div class="tt-metric">
-            <div class="tt-metric-lbl">Returned ↺ (${entry.returnCount} tx)</div>
-            <div class="tt-metric-val" style="color: #f472b6;">-${escapeHtml(formatTez(entry.returnAmount))}</div>
+          <div class="tt-metric" style="${focusStyle}">
+            <div class="tt-metric-lbl">${escapeHtml(def.ticker)} Share &amp; Txes</div>
+            <div class="tt-metric-val">${(tf.sharePct || 0).toFixed(2)}% (${tf.count} tx)</div>
           </div>
         </div>
-      `
-      : entry.isSelfTransfer
-      ? `
+      `);
+    });
+
+    retFlows.forEach((rtf) => {
+      const def = TOKEN_DEFINITIONS[rtf.tokenKey] || TOKEN_DEFINITIONS.xtz;
+      const color = rtf.tokenKey === 'xtz' ? '#f472b6' : def.returnTextColor;
+      rowsHtml.push(`
         <div class="tt-grid">
           <div class="tt-metric">
-            <div class="tt-metric-lbl">Self-Transfer Volume</div>
-            <div class="tt-metric-val">${escapeHtml(formatTez(entry.amount))}</div>
+            <div class="tt-metric-lbl">Returned ↺ (${escapeHtml(def.ticker)})</div>
+            <div class="tt-metric-val" style="color: ${color};">-${escapeHtml(formatTokenAmount(rtf.amount, rtf.tokenKey))}</div>
           </div>
           <div class="tt-metric">
-            <div class="tt-metric-lbl">Net Flow Impact</div>
-            <div class="tt-metric-val" style="color: #38bdf8;">0 ꜩ (${entry.count} tx)</div>
+            <div class="tt-metric-lbl">Return Share &amp; Txes</div>
+            <div class="tt-metric-val">${(rtf.sharePct || 0).toFixed(2)}% (${rtf.count} tx)</div>
           </div>
         </div>
-      `
-      : `
-        <div class="tt-grid">
-          <div class="tt-metric">
-            <div class="tt-metric-lbl">Volume</div>
-            <div class="tt-metric-val">${escapeHtml(formatTez(entry.amount))}</div>
-          </div>
-          <div class="tt-metric">
-            <div class="tt-metric-lbl">Share &amp; Txes</div>
-            <div class="tt-metric-val">${entry.sharePct.toFixed(2)}% (${entry.count} tx)</div>
-          </div>
-        </div>
-      `;
+      `);
+    });
 
     tooltip.innerHTML = `
       <div class="tt-header">
@@ -1869,9 +2869,9 @@ function bindSankeyInteractions(
               : `<div class="tt-address">Grouped smaller counterparties</div>`
           }
         </div>
-        <span class="tt-badge ${badgeClass}">${badgeText}</span>
+        <span class="tt-badge ${badgeClass}">${escapeHtml(badgeText)}</span>
       </div>
-      ${metricsGridHtml}
+      ${rowsHtml.join('')}
       <div class="tt-footer">
         <span><i class="fa-regular fa-calendar"></i> ${escapeHtml(dateSpan)}</span>
         <span>${
@@ -1891,10 +2891,34 @@ function bindSankeyInteractions(
   function showHubTooltip(evt) {
     if (!tooltip) return;
     const externalOutflows = rawOutflows.filter((e) => !e.isSelfTransfer);
-    const totalIn = rawInflows.reduce((s, e) => s + e.amount, 0);
-    const totalOut = externalOutflows.reduce((s, e) => s + e.amount, 0);
+    const inByToken = computeTokenTotalsMap(rawInflows);
+    const outByToken = computeTokenTotalsMap(externalOutflows);
     const alias = addressToAliasMap.get(targetAddress) || currentAccountInfo?.alias || targetAddress;
     const avatarUrl = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(targetAddress)}`;
+
+    const activeTokens = ALL_TOKEN_ORDER.filter((tk) => viewConfig.enabledTokens.has(tk));
+    const tokenRowsHtml = activeTokens
+      .map((tk) => {
+        const def = TOKEN_DEFINITIONS[tk];
+        const inAmt = inByToken.get(tk) || 0;
+        const outAmt = outByToken.get(tk) || 0;
+        const inColor = tk === 'xtz' ? 'var(--inflow-light)' : def.inflowLight;
+        const outColor = tk === 'xtz' ? 'var(--outflow-light)' : def.outflowLight;
+        return `
+          <div class="tt-grid">
+            <div class="tt-metric">
+              <div class="tt-metric-lbl">${escapeHtml(def.ticker)} In</div>
+              <div class="tt-metric-val" style="color:${inColor};">+${escapeHtml(formatTokenAmount(inAmt, tk))}</div>
+            </div>
+            <div class="tt-metric">
+              <div class="tt-metric-lbl">${escapeHtml(def.ticker)} Out</div>
+              <div class="tt-metric-val" style="color:${outColor};">-${escapeHtml(formatTokenAmount(outAmt, tk))}</div>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
     tooltip.innerHTML = `
       <div class="tt-header">
         <img class="tt-avatar" src="${avatarUrl}" alt="" onerror="this.src='icons/tezos.png'">
@@ -1904,16 +2928,7 @@ function bindSankeyInteractions(
         </div>
         <span class="tt-badge hub">Target Hub</span>
       </div>
-      <div class="tt-grid">
-        <div class="tt-metric">
-          <div class="tt-metric-lbl">Total In (${rawInflows.length})</div>
-          <div class="tt-metric-val" style="color:var(--inflow-light);">+${escapeHtml(formatTez(totalIn))}</div>
-        </div>
-        <div class="tt-metric">
-          <div class="tt-metric-lbl">Total Out (${externalOutflows.length})</div>
-          <div class="tt-metric-val" style="color:var(--outflow-light);">-${escapeHtml(formatTez(totalOut))}</div>
-        </div>
-      </div>
+      ${tokenRowsHtml}
       <div class="tt-footer">
         <span>Click to copy target address</span>
         <span>Right-click to inspect</span>
@@ -1938,10 +2953,11 @@ function bindSankeyInteractions(
     tooltip.style.transform = `translate3d(${Math.max(8, x)}px, ${Math.max(8, y)}px, 0)`;
   }
 
-  function copyEntryToClipboard(entry) {
+  async function copyEntryToClipboard(entry) {
     const relatedAddress = entry.realAddress;
-    const txHashes = txHashesMap.get(relatedAddress) || entry.txHashes || [];
-    const txHashesText = txHashes.map((hash) => `https://tzkt.io/${hash}`).join('\n');
+    const rawRefs = txHashesMap.get(relatedAddress) || entry.txHashes || [];
+    const resolvedHashes = await resolveTxRefsToHashes(rawRefs);
+    const txHashesText = resolvedHashes.map((hash) => `https://tzkt.io/${hash}`).join('\n');
     const clipboardText = `${relatedAddress}\n\n${txHashesText}`;
     navigator.clipboard
       .writeText(clipboardText)
@@ -1951,14 +2967,13 @@ function bindSankeyInteractions(
       .catch((err) => {
         console.error('Could not copy text:', err);
       });
-    showNotification(`Copied ${shortenAddress(relatedAddress)} & ${txHashes.length} tx links`);
+    showNotification(`Copied ${shortenAddress(relatedAddress)} & ${resolvedHashes.length} tx links`);
   }
 
   function handlePrimaryNodeAction(entry) {
     if (!entry) return;
     clearHighlight();
 
-    // If aggregate node clicked, expand maxNodes to show more/all!
     if (entry.isAggregate) {
       const nextMax = viewConfig.maxNodes < 100 ? 100 : 9999;
       viewConfig.maxNodes = nextMax;
@@ -1978,17 +2993,12 @@ function bindSankeyInteractions(
     }
 
     const relatedAddress = entry.realAddress;
-    if (
-      relatedAddress !== '~Activation~' &&
-      relatedAddress !== '~Bootstrap~' &&
-      relatedAddress !== '~Subsidy~'
-    ) {
+    if (!relatedAddress.startsWith('~')) {
       input.value = relatedAddress.trim();
       go();
     }
   }
 
-  // Single Delegated Event Listeners on SVG (replaces 10 * N per-element listeners)
   svgEl.addEventListener('mouseover', (evt) => {
     const inspectBtn = evt.target.closest('.node-inspect-btn');
     const itemEl = evt.target.closest('.sankey-node-group, .sankey-link-wrap, #sankey-center-hub');
@@ -2008,13 +3018,14 @@ function bindSankeyInteractions(
 
     const side = itemEl.dataset.side;
     const idx = Number(itemEl.dataset.index);
-    const hoverKey = `${side}:${idx}`;
+    const hoveredToken = itemEl.classList.contains('sankey-link-wrap') ? itemEl.dataset.token || null : null;
+    const hoverKey = `${side}:${idx}:${hoveredToken || 'all'}`;
     const entry = getEntry(side, idx);
 
     if (inspectBtn) {
       if (currentHoverKey !== hoverKey && entry) {
         currentHoverKey = hoverKey;
-        highlightConnection(entry.realAddress, side, idx);
+        highlightConnection(entry.realAddress, side, idx, null);
       }
       if (tooltip) tooltip.style.display = 'none';
       return;
@@ -2022,15 +3033,15 @@ function bindSankeyInteractions(
 
     if (currentHoverKey === hoverKey) {
       if (entry && tooltip && tooltip.style.display === 'none') {
-        showNodeTooltip(evt, entry, side);
+        showNodeTooltip(evt, entry, side, hoveredToken);
       }
       return;
     }
 
     currentHoverKey = hoverKey;
     if (entry) {
-      highlightConnection(entry.realAddress, side, idx);
-      showNodeTooltip(evt, entry, side);
+      highlightConnection(entry.realAddress, side, idx, hoveredToken);
+      showNodeTooltip(evt, entry, side, hoveredToken);
     }
   });
 
@@ -2089,24 +3100,31 @@ function bindSankeyInteractions(
 const inspectorDrawer = document.getElementById('inspector-drawer');
 let inspectedEntry = null;
 
-function openInspectorDrawer(entry, side) {
+async function openInspectorDrawer(entry, side) {
   if (!inspectorDrawer || !entry) return;
   const tooltipEl = document.getElementById('sankey-tooltip');
   if (tooltipEl) tooltipEl.style.display = 'none';
   inspectedEntry = entry;
 
+  const inFlows = entry.tokenFlows || [];
+  const retFlows = entry.hasCircularReturn ? entry.returnTokenFlows || [] : [];
+
   document.getElementById('drawer-alias').textContent = entry.alias || shortenAddress(entry.realAddress);
   document.getElementById('drawer-address').textContent = entry.realAddress;
 
   const badge = document.getElementById('drawer-badge');
-  badge.className = `tt-badge ${entry.isSelfTransfer ? 'hub' : side === 'in' ? 'inflow' : 'outflow'}`;
+  const singleFaKey = inFlows.length === 1 && inFlows[0].tokenKey !== 'xtz' ? inFlows[0].tokenKey : null;
+  badge.className = `tt-badge ${entry.isSelfTransfer ? 'hub' : singleFaKey ? singleFaKey : side === 'in' ? 'inflow' : 'outflow'}`;
+  const tickersText = Array.from(
+    new Set([...inFlows.map((tf) => tf.tokenTicker), ...retFlows.map((rtf) => rtf.tokenTicker)])
+  ).join(' + ');
   badge.textContent = entry.isSelfTransfer
-    ? 'Self-Transfer (Hub ↺ Hub)'
+    ? `${tickersText} • Self-Transfer (Hub ↺ Hub)`
     : entry.hasCircularReturn
-    ? 'Circular Flow (In & Returned ↺)'
+    ? `${tickersText} • Circular Flow (In & Returned ↺)`
     : side === 'in'
-    ? 'Inflow (Sender)'
-    : 'Outflow (Receiver)';
+    ? `${tickersText} • Inflow (Sender)`
+    : `${tickersText} • Outflow (Receiver)`;
 
   const avatar = document.getElementById('drawer-avatar');
   if (entry.realAddress.startsWith('~')) {
@@ -2115,14 +3133,14 @@ function openInspectorDrawer(entry, side) {
     avatar.src = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(entry.realAddress)}`;
   }
 
-  document.getElementById('drawer-volume').textContent = entry.hasCircularReturn
-    ? `+${formatTez(entry.amount, true)} / ↺ -${formatTez(entry.returnAmount, true)}`
-    : formatTez(entry.amount);
+  const volParts = [
+    ...inFlows.map((tf) => `${side === 'in' ? '+' : '-'}${formatTokenAmount(tf.amount, tf.tokenKey, true)}`),
+    ...retFlows.map((rtf) => `↺ -${formatTokenAmount(rtf.amount, rtf.tokenKey, true)}`)
+  ];
+  document.getElementById('drawer-volume').textContent = volParts.join(' • ');
   document.getElementById('drawer-txcount').textContent = entry.hasCircularReturn
     ? `${entry.count} in • ${entry.returnCount} returned`
-    : entry.isSelfTransfer
-    ? `${entry.count} self-tx (0 ꜩ net)`
-    : `${entry.count} (${entry.sharePct.toFixed(2)}%)`;
+    : `${entry.count} transfers (${inFlows.length} token${inFlows.length > 1 ? 's' : ''})`;
 
   const tzktLink = document.getElementById('drawer-tzkt-link');
   tzktLink.href = entry.realAddress.startsWith('~')
@@ -2130,21 +3148,39 @@ function openInspectorDrawer(entry, side) {
     : `https://tzkt.io/${encodeURIComponent(entry.realAddress)}`;
 
   const txListEl = document.getElementById('drawer-tx-list');
-  const combinedHashes = entry.hasCircularReturn
+  const combinedRawRefs = entry.hasCircularReturn
     ? Array.from(new Set([...(entry.txHashes || []), ...(entry.returnEntry?.txHashes || [])]))
     : entry.txHashes || [];
-  txListEl.innerHTML = combinedHashes
-    .map(
-      (hash, idx) => `
-      <a class="drawer-tx-item" href="https://tzkt.io/${encodeURIComponent(hash)}" target="_blank" rel="noopener">
-        <span>#${idx + 1} • ${escapeHtml(hash.slice(0, 14))}…${escapeHtml(hash.slice(-8))}</span>
-        <i class="fa-solid fa-arrow-up-right-from-square"></i>
-      </a>
-    `
-    )
-    .join('');
 
+  const renderTxItems = (hashes) => {
+    txListEl.innerHTML = hashes
+      .map((hash, idx) => {
+        const cleanHash = formatTxRefSync(hash);
+        const displayHash = cleanHash.startsWith('txid:')
+          ? `Tx ID #${cleanHash.slice(5)}`
+          : `${cleanHash.slice(0, 14)}…${cleanHash.slice(-8)}`;
+        const href = cleanHash.startsWith('txid:')
+          ? `https://tzkt.io/${encodeURIComponent(entry.realAddress)}`
+          : `https://tzkt.io/${encodeURIComponent(cleanHash)}`;
+        return `
+          <a class="drawer-tx-item" href="${href}" target="_blank" rel="noopener">
+            <span>#${idx + 1} • ${escapeHtml(displayHash)}</span>
+            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+          </a>
+        `;
+      })
+      .join('');
+  };
+
+  renderTxItems(combinedRawRefs);
   inspectorDrawer.classList.add('open');
+
+  if (combinedRawRefs.some((r) => String(r).startsWith('txid:'))) {
+    const resolved = await resolveTxRefsToHashes(combinedRawRefs);
+    if (inspectedEntry === entry) {
+      renderTxItems(resolved);
+    }
+  }
 }
 
 document.getElementById('drawer-close-btn')?.addEventListener('click', () => {
@@ -2178,12 +3214,13 @@ document.getElementById('drawer-pivot-btn')?.addEventListener('click', () => {
   }
 });
 
-document.getElementById('drawer-copy-btn')?.addEventListener('click', () => {
+document.getElementById('drawer-copy-btn')?.addEventListener('click', async () => {
   if (!inspectedEntry) return;
-  const combinedHashes = inspectedEntry.hasCircularReturn
+  const combinedRefs = inspectedEntry.hasCircularReturn
     ? Array.from(new Set([...(inspectedEntry.txHashes || []), ...(inspectedEntry.returnEntry?.txHashes || [])]))
     : inspectedEntry.txHashes || [];
-  const txText = combinedHashes.map((h) => `https://tzkt.io/${h}`).join('\n');
+  const resolved = await resolveTxRefsToHashes(combinedRefs);
+  const txText = resolved.map((h) => `https://tzkt.io/${h}`).join('\n');
   const text = `${inspectedEntry.realAddress}\n\n${txText}`;
   navigator.clipboard.writeText(text).catch(() => {});
   console.log(text);
