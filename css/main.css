@@ -1306,10 +1306,43 @@ input[type="range"]::-webkit-slider-thumb:hover {
   fill: #ffffff;
 }
 
+/* Etherlink L2 / Cross-Layer Tiny Branch Sub-Nodes */
+.sankey-l2-branch {
+  cursor: pointer;
+  transition: opacity 0.16s ease, filter 0.16s ease;
+}
+
+.sankey-svg.has-highlight .sankey-l2-branch:not(.highlighted) {
+  opacity: 0.25;
+}
+
+.sankey-l2-branch .l2-branch-pill {
+  transition: stroke 0.16s ease, fill 0.16s ease, stroke-width 0.16s ease;
+}
+
+.sankey-l2-branch .l2-branch-line {
+  transition: stroke-opacity 0.16s ease, stroke-width 0.16s ease;
+}
+
+.sankey-l2-branch:hover .l2-branch-pill,
+.sankey-l2-branch.highlighted .l2-branch-pill {
+  fill: rgba(16, 185, 129, 0.22);
+  stroke: #34d399;
+  stroke-width: 1.5px;
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.45));
+}
+
+.sankey-l2-branch:hover .l2-branch-line,
+.sankey-l2-branch.highlighted .l2-branch-line {
+  stroke-opacity: 1;
+  stroke-width: 2px;
+}
+
 /* Dense Mode (>120 nodes): disable per-element CSS transitions for instant 60fps responsiveness */
 .sankey-svg.dense-mode .sankey-link,
 .sankey-svg.dense-mode .sankey-node-group,
-.sankey-svg.dense-mode .sankey-node-card {
+.sankey-svg.dense-mode .sankey-node-card,
+.sankey-svg.dense-mode .sankey-l2-branch {
   transition: none !important;
 }
 
@@ -1409,6 +1442,12 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: var(--usdt-bg);
   color: var(--usdt-light);
   border: 1px solid var(--usdt-border);
+}
+
+.tt-badge.l2 {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.45);
 }
 
 .tt-grid {
