@@ -3654,17 +3654,19 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         ${hubBadgeText}
       </text>
 
-      <!-- Hub Avatar -->
-      <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR}" fill="${isL2Hub ? '#064e3b' : '#312e81'}" />
-      <text x="${hubMidX}" y="${avatarCy + 5}" text-anchor="middle" fill="${isL2Hub ? '#6ee7b7' : '#c7d2fe'}" font-family="Space Grotesk, Inter, sans-serif" font-size="14" font-weight="700">
-        ${escapeHtml(hubInitial)}
-      </text>
-      ${
-        !isL2Hub
-          ? `<image class="hub-avatar-img" href="${hubAvatarUrl}" x="${hubMidX - avatarR}" y="${avatarCy - avatarR}" width="${avatarR * 2}" height="${avatarR * 2}" clip-path="url(#hub-avatar-clip)" preserveAspectRatio="xMidYMid slice" />`
-          : ''
-      }
-      <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR + 0.5}" fill="none" stroke="${isL2Hub ? '#34d399' : '#818cf8'}" stroke-width="1.5" />
+      <!-- Hub Avatar (Click to open in explorer) -->
+      <a class="hub-avatar-link" href="${escapeHtml(getExplorerAddressUrl(targetAddress))}" target="_blank" rel="noopener">
+        <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR}" fill="${isL2Hub ? '#064e3b' : '#312e81'}" />
+        <text x="${hubMidX}" y="${avatarCy + 5}" text-anchor="middle" fill="${isL2Hub ? '#6ee7b7' : '#c7d2fe'}" font-family="Space Grotesk, Inter, sans-serif" font-size="14" font-weight="700">
+          ${escapeHtml(hubInitial)}
+        </text>
+        ${
+          !isL2Hub
+            ? `<image class="hub-avatar-img" href="${hubAvatarUrl}" x="${hubMidX - avatarR}" y="${avatarCy - avatarR}" width="${avatarR * 2}" height="${avatarR * 2}" clip-path="url(#hub-avatar-clip)" preserveAspectRatio="xMidYMid slice" />`
+            : ''
+        }
+        <circle class="hub-avatar-ring" cx="${hubMidX}" cy="${avatarCy}" r="${avatarR + 0.5}" fill="none" stroke="${isL2Hub ? '#34d399' : '#818cf8'}" stroke-width="1.5" />
+      </a>
 
       <!-- Target Alias & Short Address -->
       <text class="hub-title-text" x="${hubMidX}" y="${contentTopY + 84}" text-anchor="middle" fill="#ffffff" font-family="Space Grotesk, Inter, sans-serif" font-size="14.5" font-weight="700">${escapeHtml(hubTitle)}</text>
@@ -4134,7 +4136,6 @@ function bindSankeyInteractions(
       ${tokenRowsHtml}
       <div class="tt-footer">
         <span>Click to copy target address</span>
-        <span>${isL2 ? 'Etherlink Blockscout API' : 'TzKT Mainnet API'}</span>
       </div>
     `;
     tooltip.style.display = 'block';
@@ -4324,6 +4325,12 @@ function bindSankeyInteractions(
       const side = inspectBtn.dataset.side;
       const idx = Number(inspectBtn.dataset.index);
       openInspectorDrawer(getEntry(side, idx), side);
+      return;
+    }
+
+    const avatarLinkEl = evt.target.closest('.hub-avatar-link');
+    if (avatarLinkEl) {
+      evt.stopPropagation();
       return;
     }
 
