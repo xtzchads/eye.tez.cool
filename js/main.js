@@ -787,6 +787,43 @@ resultLimitSlider.addEventListener('input', function () {
   limitValueLabel.textContent = formatLimitLabel(this.value);
   updateSliderTrack(this);
   updateLocationHash();
+  if (currentAddress) {
+    const limit = Number(this.value) || 1000;
+    const isL2 = isEtherlinkAddress(currentAddress);
+    const cacheKey = isL2 ? currentAddress.toLowerCase() : currentAddress;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      const needXtz = viewConfig.enabledTokens.has('xtz');
+      const enabledL2 = L2_ERC20_TOKEN_KEYS.filter((k) => viewConfig.enabledTokens.has(k));
+      const needFa = isL2
+        ? enabledL2.length > 0
+        : L1_FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
+      const xtzReady = !needXtz || cached.exhausted || (cached.limit || 0) >= limit;
+      const faTargetPages = getL2FaTargetPages(limit);
+      const faReady =
+        !needFa ||
+        (Boolean(cached.accountInfo?.tokenBalancesFetched) &&
+          (isL2
+            ? enabledL2.every(
+                (k) =>
+                  cached.fetchedL2Tokens?.has(k) &&
+                  (cached.tokenExhaustedMap?.get(k) || (cached.tokenPagesMap?.get(k) || 0) >= faTargetPages)
+              )
+            : cached.faExhausted || (cached.faLimit || 0) >= limit));
+      if (xtzReady && faReady) {
+        currentRawData = needXtz
+          ? [...(cached.txData || []).slice(0, limit), ...(cached.specialOps || [])]
+          : [];
+        currentFaData = needFa
+          ? isL2
+            ? sliceL2FaTransfersByDepth(cached.faData || [], limit)
+            : (cached.faData || []).slice(0, limit)
+          : [];
+        currentAccountInfo = cached.accountInfo;
+        refreshDiagramFromMemory();
+      }
+    }
+  }
 });
 
 resultLimitSlider.addEventListener('change', function () {
@@ -916,6 +953,32 @@ function syncTokenControlsUI() {
   });
 }
 
+function getL2FaTargetPages(requestedLimit) {
+  const numLimit = Number(requestedLimit) || 1000;
+  return numLimit < 1000
+    ? Math.max(1, Math.ceil(numLimit / 100))
+    : Math.min(35, Math.max(15, Math.ceil(numLimit / 100)));
+}
+
+function sliceL2FaTransfersByDepth(faList, requestedLimit) {
+  if (!Array.isArray(faList) || faList.length === 0) return [];
+  const numLimit = Number(requestedLimit) || 1000;
+  // At the default 1,000 depth setting, allow up to 1,500 transfers per token so complete ~1.3k-tx histories stay intact
+  const perTokenCap = numLimit === 1000 ? 1500 : numLimit;
+  const countsByContract = new Map();
+  const out = [];
+  for (let i = 0; i < faList.length; i++) {
+    const item = faList[i];
+    const cAddr = item['token.contract.address'] || '';
+    const cur = countsByContract.get(cAddr) || 0;
+    if (cur < perTokenCap) {
+      countsByContract.set(cAddr, cur + 1);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
 async function onTokenSelectionChanged() {
   const addr = currentAddress || input.value.trim();
   if (!addr) return;
@@ -928,6 +991,7 @@ async function onTokenSelectionChanged() {
   const needFa = isL2
     ? enabledL2.length > 0
     : L1_FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
+  const faTargetPages = getL2FaTargetPages(limit);
 
   const missingXtz =
     needXtz &&
@@ -937,7 +1001,11 @@ async function onTokenSelectionChanged() {
     (!cached ||
       !cached.accountInfo?.tokenBalancesFetched ||
       (isL2
-        ? enabledL2.some((k) => !cached.fetchedL2Tokens?.has(k))
+        ? enabledL2.some(
+            (k) =>
+              !cached.fetchedL2Tokens?.has(k) ||
+              (!cached.tokenExhaustedMap?.get(k) && (cached.tokenPagesMap?.get(k) || 0) < faTargetPages)
+          )
         : !cached.faExhausted && (cached.faLimit || 0) < limit));
 
   if (missingXtz || missingFa) {
@@ -949,7 +1017,7 @@ async function onTokenSelectionChanged() {
         : [];
       currentFaData = needFa
         ? isL2
-          ? cached.faData || []
+          ? sliceL2FaTransfersByDepth(cached.faData || [], limit)
           : (cached.faData || []).slice(0, limit)
         : [];
       currentAccountInfo = cached.accountInfo;
@@ -1309,17 +1377,24 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   const enabledL2Keys = L2_ERC20_TOKEN_KEYS.filter((k) => viewConfig.enabledTokens.has(k));
   const needFa = enabledL2Keys.length > 0;
 
+  const xtzTargetPages = Math.min(25, Math.max(1, Math.ceil(numLimit / 200)));
+  const faTargetPages = getL2FaTargetPages(numLimit);
+
   if (cache.has(evmAddress)) {
     const cached = cache.get(evmAddress);
     const xtzReady = !needXtz || cached.exhausted || (cached.limit || 0) >= numLimit;
     const faReady =
       !needFa ||
       (Boolean(cached.accountInfo?.tokenBalancesFetched) &&
-        enabledL2Keys.every((k) => cached.fetchedL2Tokens?.has(k)));
+        enabledL2Keys.every(
+          (k) =>
+            cached.fetchedL2Tokens?.has(k) &&
+            (cached.tokenExhaustedMap?.get(k) || (cached.tokenPagesMap?.get(k) || 0) >= faTargetPages)
+        ));
     if (xtzReady && faReady) {
       return {
         operations: needXtz ? cached.txData.slice(0, numLimit) : [],
-        faTransfers: needFa ? cached.faData || [] : [],
+        faTransfers: needFa ? sliceL2FaTransfersByDepth(cached.faData || [], numLimit) : [],
         accountInfo: cached.accountInfo
       };
     }
@@ -1342,7 +1417,13 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   const existing = cache.get(evmAddress);
   const enc = encodeURIComponent(evmAddress);
   const fetchedL2Tokens = new Set(existing?.fetchedL2Tokens || []);
-  const missingL2Keys = enabledL2Keys.filter((k) => !fetchedL2Tokens.has(k));
+  const tokenExhaustedMap = new Map(existing?.tokenExhaustedMap || []);
+  const tokenNextQsMap = new Map(existing?.tokenNextQsMap || []);
+  const tokenPagesMap = new Map(existing?.tokenPagesMap || []);
+
+  const missingL2Keys = enabledL2Keys.filter(
+    (k) => !fetchedL2Tokens.has(k) || (!tokenExhaustedMap.get(k) && (tokenPagesMap.get(k) || 0) < faTargetPages)
+  );
 
   const aliasLookup = new Map([
     [ETHERLINK_ZERO_ADDRESS, 'Zero / Mint & Burn Address (0x0)'],
@@ -1396,21 +1477,29 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     return parts.length > 0 ? `?${parts.join('&')}` : '';
   }
 
-  async function fetchV2InternalPaginated(encodedAddr, maxPages = 5) {
-    const allItems = [];
-    let nextQs = '?items_count=100';
+  async function fetchV2InternalPaginated(encodedAddr, targetPages = 5) {
+    const priorItems = Array.isArray(existing?.rawIntItems) ? existing.rawIntItems : [];
+    const priorPages = existing?.intPagesFetched || 0;
+    if (existing?.intExhausted) {
+      return { items: priorItems, exhausted: true, nextQs: null, pagesFetched: priorPages };
+    }
+    const allItems = [...priorItems];
+    let nextQs = priorPages > 0 && existing?.intNextQs ? existing.intNextQs : '?items_count=100';
     let exhausted = false;
-    for (let page = 0; page < maxPages; page++) {
+    let pagesFetched = priorPages;
+    for (let page = priorPages; page < targetPages; page++) {
       try {
         const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/internal-transactions${nextQs}`);
         if (!res.ok) break;
         const json = await res.json();
+        pagesFetched++;
         if (Array.isArray(json?.items)) {
           allItems.push(...json.items);
         }
         const qs = buildV2NextQuery(json?.next_page_params);
         if (!qs) {
           exhausted = true;
+          nextQs = null;
           break;
         }
         nextQs = qs;
@@ -1418,24 +1507,32 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         break;
       }
     }
-    return { items: allItems, exhausted };
+    return { items: allItems, exhausted, nextQs, pagesFetched };
   }
 
-  async function fetchV2TransactionsPaginated(encodedAddr, maxPages = 5) {
-    const allItems = [];
-    let nextQs = '?items_count=100';
+  async function fetchV2TransactionsPaginated(encodedAddr, targetPages = 5) {
+    const priorItems = Array.isArray(existing?.rawTopItems) ? existing.rawTopItems : [];
+    const priorPages = existing?.topPagesFetched || 0;
+    if (existing?.topExhausted) {
+      return { items: priorItems, exhausted: true, nextQs: null, pagesFetched: priorPages };
+    }
+    const allItems = [...priorItems];
+    let nextQs = priorPages > 0 && existing?.topNextQs ? existing.topNextQs : '?items_count=100';
     let exhausted = false;
-    for (let page = 0; page < maxPages; page++) {
+    let pagesFetched = priorPages;
+    for (let page = priorPages; page < targetPages; page++) {
       try {
         const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/transactions${nextQs}`);
         if (!res.ok) break;
         const json = await res.json();
+        pagesFetched++;
         if (Array.isArray(json?.items)) {
           allItems.push(...json.items);
         }
         const qs = buildV2NextQuery(json?.next_page_params);
         if (!qs) {
           exhausted = true;
+          nextQs = null;
           break;
         }
         nextQs = qs;
@@ -1443,7 +1540,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         break;
       }
     }
-    return { items: allItems, exhausted };
+    return { items: allItems, exhausted, nextQs, pagesFetched };
   }
 
   async function fetchZeroAddressTransfersForTokens(tokenContracts, pagesPerToken = 2) {
@@ -1491,7 +1588,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     if (evmAddress === ETHERLINK_ZERO_ADDRESS) {
       const targetContracts = targetTokenKeys.map((k) => TOKEN_DEFINITIONS[k]?.l2Contract).filter(Boolean);
       const zeroItems = await fetchZeroAddressTransfersForTokens(targetContracts, 2);
-      targetTokenKeys.forEach((k) => fetchedL2Tokens.add(k));
+      targetTokenKeys.forEach((k) => {
+        fetchedL2Tokens.add(k);
+        tokenExhaustedMap.set(k, true);
+      });
       return { items: zeroItems, exhausted: true };
     }
 
@@ -1513,7 +1613,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           .catch(() => null),
         fetchZeroAddressTransfersForTokens(bridgedContracts, 2)
       ]);
-      L2_ERC20_TOKEN_KEYS.forEach((k) => fetchedL2Tokens.add(k));
+      L2_ERC20_TOKEN_KEYS.forEach((k) => {
+        fetchedL2Tokens.add(k);
+        tokenExhaustedMap.set(k, true);
+      });
       return {
         items: [
           ...(Array.isArray(directRes?.items) ? directRes.items : []),
@@ -1541,7 +1644,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           const json = await res.json();
           if (!json?.next_page_params && Array.isArray(json?.items)) {
             unfilteredFaShortCircuit = true;
-            L2_ERC20_TOKEN_KEYS.forEach((k) => fetchedL2Tokens.add(k));
+            L2_ERC20_TOKEN_KEYS.forEach((k) => {
+              fetchedL2Tokens.add(k);
+              tokenExhaustedMap.set(k, true);
+            });
             return { items: json.items, exhausted: true };
           }
         }
@@ -1554,25 +1660,39 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     const perTokenResults = await Promise.all(
       targetTokenKeys.map(async (tk) => {
         const tokAddr = TOKEN_DEFINITIONS[tk]?.l2Contract || TOKEN_DEFINITIONS[tk]?.contract;
-        if (!tokAddr) return [];
+        if (!tokAddr || tokenExhaustedMap.get(tk)) return [];
         const tokenItems = [];
-        let nextQs = `?type=ERC-20&token=${tokAddr}&items_count=100`;
-        for (let page = 0; page < maxPagesPerToken; page++) {
+        const startPage = tokenPagesMap.get(tk) || 0;
+        let nextQs =
+          startPage > 0 && tokenNextQsMap.get(tk)
+            ? tokenNextQsMap.get(tk)
+            : `?type=ERC-20&token=${tokAddr}&items_count=100`;
+        let pagesDone = startPage;
+        let tkExhausted = false;
+        for (let page = startPage; page < maxPagesPerToken; page++) {
           try {
             const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers${nextQs}`);
             if (!res.ok) break;
             const json = await res.json();
+            pagesDone++;
             if (Array.isArray(json?.items)) {
               tokenItems.push(...json.items);
             }
             const qs = buildV2NextQuery(json?.next_page_params, { type: 'ERC-20', token: tokAddr });
-            if (!qs) break;
+            if (!qs) {
+              tkExhausted = true;
+              nextQs = null;
+              break;
+            }
             nextQs = qs;
           } catch (_) {
             break;
           }
         }
         fetchedL2Tokens.add(tk);
+        tokenPagesMap.set(tk, pagesDone);
+        tokenNextQsMap.set(tk, nextQs);
+        tokenExhaustedMap.set(tk, tkExhausted);
         return tokenItems;
       })
     );
@@ -1584,10 +1704,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       allItems.push(...extra);
     }
 
-    return { items: allItems, exhausted: true };
+    return { items: allItems, exhausted: targetTokenKeys.every((k) => tokenExhaustedMap.get(k)) };
   }
 
-  const needXtzFetch = needXtz && !existing?.exhausted;
+  const needXtzFetch = needXtz && (!existing?.exhausted && (existing?.limit || 0) < numLimit);
   const needFaFetch = needFa && missingL2Keys.length > 0;
 
   const addrPromise = !existing?.accountInfo
@@ -1595,13 +1715,12 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     : Promise.resolve(null);
 
   const topTxV2Promise = needXtzFetch
-    ? fetchV2TransactionsPaginated(enc, 5)
+    ? fetchV2TransactionsPaginated(enc, xtzTargetPages)
     : Promise.resolve(null);
 
-  const internalV2Promise =
-    needXtz && !existing?.internalChecked
-      ? fetchV2InternalPaginated(enc, 5)
-      : Promise.resolve(null);
+  const internalV2Promise = needXtzFetch
+    ? fetchV2InternalPaginated(enc, xtzTargetPages)
+    : Promise.resolve(null);
 
   const tokensBalPromise =
     needFa && !existing?.accountInfo?.tokenBalancesFetched
@@ -1611,7 +1730,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       : Promise.resolve(null);
 
   const tokenTxPromise = needFaFetch
-    ? fetchV2TokenTransfersSmart(enc, missingL2Keys, 15)
+    ? fetchV2TokenTransfersSmart(enc, missingL2Keys, faTargetPages)
     : Promise.resolve(null);
 
   const rawHexNoPrefix = evmAddress.replace(/^0x/i, '');
@@ -1698,7 +1817,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       evmAddress !== ETHERLINK_WXTZ_CONTRACT &&
       evmAddress !== ETHERLINK_XU3O8_CONTRACT
     ) {
-      L2_ERC20_TOKEN_KEYS.forEach((k) => fetchedL2Tokens.add(k));
+      L2_ERC20_TOKEN_KEYS.forEach((k) => {
+        fetchedL2Tokens.add(k);
+        tokenExhaustedMap.set(k, true);
+      });
       unfilteredFaShortCircuit = true;
     }
   }
@@ -1752,7 +1874,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   // 2. Parse Native XTZ Transactions on Etherlink L2 (only when needXtzFetch is true)
   let txData = existing?.txData ? [...existing.txData] : [];
+  let topExhausted = Boolean(existing?.topExhausted);
+  let intExhausted = Boolean(existing?.intExhausted);
   if (needXtzFetch) {
+    txData = (isFeedAddress || isWithdrawPrecompile) && existing?.txData ? [...existing.txData] : [];
     const seenKeys = new Set(txData.map((op) => op._dedupKey || op.hash));
 
     // If viewing 0x0000...feed directly, hydrate both L1 bridge inflows (from KT1Wj8...) and L2 outflows (to 0x... recipients)
@@ -1847,7 +1972,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       });
     }
 
-    let topExhausted = Boolean(topTxV2Result?.exhausted);
+    topExhausted = Boolean(topTxV2Result?.exhausted);
     let minTopBlock = Infinity;
 
     if (Array.isArray(topTxV2Result?.items)) {
@@ -1903,7 +2028,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       });
     }
 
-    let intExhausted = true;
+    intExhausted = true;
     let minIntBlock = Infinity;
 
     if (Array.isArray(intV2Result?.items)) {
@@ -2050,6 +2175,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         }
       }
     }
+
+    txData.sort((a, b) => (b.id || 0) - (a.id || 0));
   }
 
   // 3. Parse ERC-20 Token Transfers (USDT, USDC, WXTZ, WETH, LBTC, WBTC, xU3O8) & LayerZero Bridge recognition
@@ -2166,18 +2293,29 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   cache.set(evmAddress, {
     txData,
+    rawTopItems: needXtzFetch ? topTxV2Result?.items || [] : existing?.rawTopItems || [],
+    rawIntItems: needXtzFetch ? intV2Result?.items || [] : existing?.rawIntItems || [],
+    topExhausted,
+    intExhausted,
+    topNextQs: needXtzFetch ? topTxV2Result?.nextQs || null : existing?.topNextQs || null,
+    intNextQs: needXtzFetch ? intV2Result?.nextQs || null : existing?.intNextQs || null,
+    topPagesFetched: needXtzFetch ? topTxV2Result?.pagesFetched || 0 : existing?.topPagesFetched || 0,
+    intPagesFetched: needXtzFetch ? intV2Result?.pagesFetched || 0 : existing?.intPagesFetched || 0,
     specialOps: [],
     specialOpsFetched: true,
     internalChecked: needXtz ? true : Boolean(existing?.internalChecked),
     l1DepositsChecked: needXtz ? true : Boolean(existing?.l1DepositsChecked),
-    limit: needXtz ? Math.max(txData.length, numLimit) : existing?.limit || 0,
+    limit: needXtz ? Math.max(txData.length, numLimit, existing?.limit || 0) : existing?.limit || 0,
     lastOffset: null,
-    exhausted: needXtz ? true : Boolean(existing?.exhausted),
+    exhausted: needXtzFetch ? topExhausted && intExhausted : Boolean(existing?.exhausted),
     faData,
-    faLimit: needFa ? Math.max(faData.length, numLimit) : existing?.faLimit || 0,
+    faLimit: needFa ? Math.max(faData.length, numLimit, existing?.faLimit || 0) : existing?.faLimit || 0,
     faLastOffset: null,
-    faExhausted: L2_ERC20_TOKEN_KEYS.every((k) => fetchedL2Tokens.has(k)),
+    faExhausted: L2_ERC20_TOKEN_KEYS.every((k) => tokenExhaustedMap.get(k)),
     fetchedL2Tokens,
+    tokenExhaustedMap,
+    tokenNextQsMap,
+    tokenPagesMap,
     unfilteredTried: unfilteredAttempted,
     unfilteredFaComplete: unfilteredFaShortCircuit,
     accountInfo
@@ -2185,7 +2323,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   return {
     operations: needXtz ? txData.slice(0, numLimit) : [],
-    faTransfers: needFa ? faData : [],
+    faTransfers: needFa ? sliceL2FaTransfersByDepth(faData, numLimit) : [],
     accountInfo
   };
 }
