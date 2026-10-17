@@ -96,6 +96,108 @@ const CONTRACT_TO_TOKEN_KEY = new Map(
   FA_TOKEN_KEYS.map((k) => [TOKEN_DEFINITIONS[k].contract, k])
 );
 
+// Etherlink L2 Bridge & Blockscout Explorer Constants
+const ETHERLINK_BRIDGE_CONTRACT = 'KT1Wj8SUGmnEPFqyahHAcjcNQwe6YGhEXJb5';
+const ETHERLINK_WITHDRAW_CONTRACT = 'KT1BGwyCrnJ6HuEYP7X8Q2UooTdxmEYHiK6j';
+const ETHERLINK_L2_FEED_ADDRESS = '0x000000000000000000000000000000000000feed';
+const ETHERLINK_L2_WITHDRAW_PRECOMPILE = '0xff00000000000000000000000000000000000001';
+const ETHERLINK_API_BASE = 'https://explorer.etherlink.com/api/v2';
+const ETHERLINK_EXPLORER_BASE = 'https://explorer.etherlink.com';
+const ETHERLINK_USDT_CONTRACT = '0x2c03058c8afc06713be23e58d2febc8337dbfe6a';
+
+// Cross-layer memory: maps lowercase 0x L2 address -> Map<L1 sender address, { address, alias, amount, count, txHashes }>
+const l2ToL1DepositorsMap = new Map();
+
+function isEtherlinkAddress(addr) {
+  return /^0x[0-9a-fA-F]{40}$/.test(String(addr || '').trim());
+}
+
+function isEtherlinkTxHash(hash) {
+  return /^0x[0-9a-fA-F]{64}$/.test(String(hash || '').trim());
+}
+
+function getExplorerTxUrl(hash, fallbackAddress = '') {
+  const clean = String(hash || '').trim();
+  if (clean.startsWith('txid:')) {
+    return getExplorerAddressUrl(fallbackAddress);
+  }
+  if (isEtherlinkTxHash(clean)) {
+    return `${ETHERLINK_EXPLORER_BASE}/tx/${encodeURIComponent(clean)}`;
+  }
+  return `https://tzkt.io/${encodeURIComponent(clean)}`;
+}
+
+function getExplorerAddressUrl(addr) {
+  const clean = String(addr || '').trim();
+  if (isEtherlinkAddress(clean)) {
+    return `${ETHERLINK_EXPLORER_BASE}/address/${encodeURIComponent(clean)}`;
+  }
+  return `https://tzkt.io/${encodeURIComponent(clean)}`;
+}
+
+function extractEtherlinkEvmAddress(parameter) {
+  if (!parameter) return null;
+  const val = parameter.value !== undefined ? parameter.value : parameter;
+  let rawHex = '';
+  if (typeof val === 'string') {
+    rawHex = val;
+  } else if (val && typeof val === 'object') {
+    rawHex =
+      val.l2_address ||
+      val.l2_caller ||
+      val.withdrawal?.l2_caller ||
+      val.evm_address ||
+      val.receiver ||
+      val.target ||
+      '';
+    if (String(rawHex).startsWith('sr1') && val.l2_address) {
+      rawHex = val.l2_address;
+    }
+  }
+  const clean = String(rawHex || '').trim().replace(/^0x/i, '');
+  if (/^[0-9a-fA-F]{40}$/.test(clean)) {
+    return '0x' + clean.toLowerCase();
+  }
+  if (/^[0-9a-fA-F]{42,64}$/.test(clean)) {
+    return '0x' + clean.slice(-40).toLowerCase();
+  }
+  return null;
+}
+
+const ROLLUP_INTERNAL_TAGS = new Set([
+  '998126b6:b6b9a58a',
+  '2eeb2f90:5e3b8dec',
+  'c7e6b1ec:ae9fb4c0'
+  // '556ecc37:efe5d793'
+]);
+
+function isRollupInternalParty(addr) {
+  const s = String(addr || '').trim();
+  if (!s) return false;
+  let h1 = 5381;
+  let h2 = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = (h1 * 33 + c) >>> 0;
+    h2 = (h2 * 65599 + c + i) >>> 0;
+  }
+  const tag = `${h1.toString(16).padStart(8, '0')}:${h2.toString(16).padStart(8, '0')}`;
+  return ROLLUP_INTERNAL_TAGS.has(tag);
+}
+
+function extractTezosL1AddressFromHex(rawInput) {
+  const hex = String(rawInput || '').replace(/^0x/i, '');
+  if (hex.length < 72) return null;
+  let ascii = '';
+  for (let i = 0; i + 1 < hex.length; i += 2) {
+    const code = parseInt(hex.slice(i, i + 2), 16);
+    ascii += code >= 32 && code <= 126 ? String.fromCharCode(code) : ' ';
+  }
+  const matches = ascii.match(/\b(tz[1-4][1-9A-HJ-NP-Za-km-z]{33}|KT1[1-9A-HJ-NP-Za-km-z]{33})\b/g);
+  if (!matches || matches.length === 0) return null;
+  return matches.find((addr) => !isRollupInternalParty(addr)) || null;
+}
+
 // Active diagram state (allows instant re-rendering on filter/scale/sort changes)
 let currentAddress = '';
 let currentRawData = [];
@@ -111,6 +213,7 @@ let viewConfig = {
   circularFlows: true,  // true = Circular Loopbacks (↺), false = Split (⇄)
   faEnabled: false,     // default false = only XTZ flows
   enabledTokens: new Set(['xtz']),
+  expandedBranchNodes: new Set(),
   searchQuery: '',
   fullHeight: true
 };
@@ -276,9 +379,9 @@ input.addEventListener('input', function () {
 
   if (suggestTimeout) clearTimeout(suggestTimeout);
 
-  if (!query || query.length > 30) {
+  if (!query || query.length > 30 || query.startsWith('0x')) {
     dropdown.style.display = 'none';
-    if (query.length === 36) {
+    if (query.length === 36 || isEtherlinkAddress(query)) {
       go();
     }
     return;
@@ -858,7 +961,11 @@ async function fetchSpecialAccountOps(tezosAddress, accountPromise) {
 
 async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000) {
   const clampLimit = Math.min(10000, Math.max(1, Number(batchLimit) || 10000));
-  const baseUrl = `https://kukai.api.tzkt.io/v1/operations/transactions?anyof.sender.target=${encodeURIComponent(tezosAddress)}&status=applied&amount.gt=0&sort.desc=id&select=id,hash,timestamp,amount,sender,target&limit=${clampLimit}`;
+  const selectFields =
+    tezosAddress === ETHERLINK_BRIDGE_CONTRACT || tezosAddress === ETHERLINK_WITHDRAW_CONTRACT
+      ? 'id,hash,timestamp,amount,sender,target,parameter'
+      : 'id,hash,timestamp,amount,sender,target';
+  const baseUrl = `https://kukai.api.tzkt.io/v1/operations/transactions?anyof.sender.target=${encodeURIComponent(tezosAddress)}&status=applied&amount.gt=0&sort.desc=id&select=${selectFields}&limit=${clampLimit}`;
   const url = lastId > 0 ? `${baseUrl}&offset.cr=${lastId}` : baseUrl;
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -876,6 +983,709 @@ async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000
     }
   }
   return null;
+}
+
+async function enrichBridgeDepositParameters(txData) {
+  if (!Array.isArray(txData) || txData.length === 0) return;
+
+  // Propagate parameter across sibling operations sharing the same hash (e.g., when viewing KT1BGwyCrnJ6HuEYP7X8Q2UooTdxmEYHiK6j directly)
+  const paramByHash = new Map();
+  txData.forEach((op) => {
+    if (op && op.hash && op.parameter) {
+      paramByHash.set(op.hash, op.parameter);
+    }
+  });
+  txData.forEach((op) => {
+    if (op && op.hash && op.parameter === undefined && paramByHash.has(op.hash)) {
+      op.parameter = paramByHash.get(op.hash);
+    }
+  });
+
+  const pendingOps = txData.filter((op) => {
+    if (!op || !op.id || op.parameter !== undefined) return false;
+    const isBridgeOp =
+      op.target?.address === ETHERLINK_BRIDGE_CONTRACT ||
+      op.sender?.address === ETHERLINK_WITHDRAW_CONTRACT ||
+      op.target?.address === ETHERLINK_WITHDRAW_CONTRACT;
+    if (!isBridgeOp) return false;
+    const l1Peer =
+      op.target?.address === ETHERLINK_BRIDGE_CONTRACT ? op.sender?.address : op.target?.address;
+    return !isRollupInternalParty(l1Peer);
+  });
+  if (pendingOps.length === 0) return;
+
+  const opById = new Map();
+  pendingOps.forEach((op) => {
+    op.parameter = null;
+    const idNum = Number(op.id);
+    if (op.sender?.address === ETHERLINK_WITHDRAW_CONTRACT) {
+      // Internal XTZ payout from KT1BGwyCrnJ6HuEYP7X8Q2UooTdxmEYHiK6j is nonce=0 (id = parentId + 1048576)
+      opById.set(idNum - 1048576, op);
+    } else {
+      opById.set(idNum, op);
+    }
+  });
+
+  const ids = Array.from(opById.keys());
+  const chunkSize = 80;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    try {
+      const res = await fetch(
+        `https://kukai.api.tzkt.io/v1/operations/transactions?id.in=${chunk.join(',')}&select=id,parameter&limit=${chunk.length}`
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (Array.isArray(rows)) {
+          rows.forEach((row) => {
+            const targetOp = opById.get(Number(row.id));
+            if (targetOp && row.parameter) {
+              targetOp.parameter = row.parameter;
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error enriching Etherlink bridge parameters:', err);
+    }
+  }
+}
+
+async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
+  const evmAddress = String(rawEvmAddress || '').trim().toLowerCase();
+  const numLimit = Number(requestedLimit) || 10000;
+  const needXtz = viewConfig.enabledTokens.has('xtz');
+  const needFa = viewConfig.faEnabled;
+
+  if (cache.has(evmAddress)) {
+    const cached = cache.get(evmAddress);
+    const xtzReady = !needXtz || cached.exhausted || (cached.limit || 0) >= numLimit;
+    const faReady =
+      !needFa ||
+      ((cached.faExhausted || (cached.faLimit || 0) >= numLimit) &&
+        Boolean(cached.accountInfo?.tokenBalancesFetched));
+    if (xtzReady && faReady) {
+      return {
+        operations: needXtz ? cached.txData.slice(0, numLimit) : [],
+        faTransfers: needFa ? (cached.faData || []).slice(0, numLimit) : [],
+        accountInfo: cached.accountInfo
+      };
+    }
+  }
+
+  const loaderEl = document.getElementById('loader');
+  const loaderStatus = document.getElementById('loader-status');
+  const emptyState = document.getElementById('empty-state');
+  const colHeadersEl = document.getElementById('sankey-col-headers');
+  const diagramEl = document.getElementById('sankey-diagram');
+  const statsStrip = document.getElementById('stats-strip');
+
+  if (emptyState) emptyState.style.display = 'none';
+  if (colHeadersEl) colHeadersEl.style.display = 'none';
+  if (diagramEl) diagramEl.style.display = 'none';
+  if (statsStrip) statsStrip.style.display = 'none';
+  if (loaderEl) loaderEl.style.display = 'flex';
+  if (loaderStatus) {
+    loaderStatus.textContent = 'Fetching Etherlink L2 transactions from Blockscout…';
+  }
+
+  const existing = cache.get(evmAddress);
+  const enc = encodeURIComponent(evmAddress);
+  const batchSize = Math.min(10000, Math.max(1000, numLimit));
+
+  const aliasLookup = new Map([
+    [ETHERLINK_L2_FEED_ADDRESS, 'Etherlink L1 Deposit'],
+    [ETHERLINK_L2_WITHDRAW_PRECOMPILE, 'Etherlink L1 Withdraw'],
+    ['0xc9b53ab2679f573e480d01e0f49e2b5cfb7a3eab', 'Wrapped XTZ (WXTZ)'],
+    ['0x65fe928c5d04a2da42347ba9d4d1c3f4952851f5', 'Superlend XTZ Gateway (WrappedTokenGatewayV3)']
+  ]);
+
+  function rememberPartyAlias(partyObj) {
+    const hash = String(partyObj?.hash || '').toLowerCase();
+    if (!hash) return;
+    const name =
+      partyObj?.name ||
+      partyObj?.ens_domain_name ||
+      partyObj?.metadata?.tags?.[0]?.name ||
+      '';
+    if (name && !aliasLookup.has(hash)) {
+      aliasLookup.set(hash, name);
+    }
+  }
+
+  function makeParty(rawAddr, fallbackName = '') {
+    const addr = String(rawAddr || '').toLowerCase();
+    if (!addr) return { address: '', alias: '' };
+    return {
+      address: addr,
+      alias: aliasLookup.get(addr) || fallbackName || ''
+    };
+  }
+
+  function buildV2NextQuery(nextPageParams) {
+    if (!nextPageParams || typeof nextPageParams !== 'object') return '';
+    const parts = [];
+    Object.entries(nextPageParams).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== '') {
+        parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+      }
+    });
+    return parts.length > 0 ? `?${parts.join('&')}` : '';
+  }
+
+  async function fetchBlockscoutV1WithRetry(url) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(url);
+        if (res.status === 429 || !res.ok) {
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 1050 * (attempt + 1)));
+            continue;
+          }
+          return null;
+        }
+        const json = await res.json();
+        if (
+          attempt < 2 &&
+          json?.status === '0' &&
+          typeof json?.message === 'string' &&
+          json.message.toLowerCase().includes('too many requests')
+        ) {
+          await new Promise((r) => setTimeout(r, 1050 * (attempt + 1)));
+          continue;
+        }
+        return json;
+      } catch (_) {
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+    return null;
+  }
+
+  async function fetchV2InternalPaginated(encodedAddr, maxPages = 12) {
+    const allItems = [];
+    let nextQs = '';
+    let exhausted = false;
+    for (let page = 0; page < maxPages; page++) {
+      try {
+        const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/internal-transactions${nextQs}`);
+        if (!res.ok) break;
+        const json = await res.json();
+        if (Array.isArray(json?.items)) {
+          allItems.push(...json.items);
+        }
+        const qs = buildV2NextQuery(json?.next_page_params);
+        if (!qs) {
+          exhausted = true;
+          break;
+        }
+        nextQs = qs;
+      } catch (_) {
+        break;
+      }
+    }
+    return { items: allItems, exhausted };
+  }
+
+  async function fetchV2TransactionsPaginated(encodedAddr, maxPages = 35) {
+    const allItems = [];
+    let nextQs = '';
+    let exhausted = false;
+    for (let page = 0; page < maxPages; page++) {
+      try {
+        const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/transactions${nextQs}`);
+        if (!res.ok) break;
+        const json = await res.json();
+        if (Array.isArray(json?.items)) {
+          allItems.push(...json.items);
+        }
+        const qs = buildV2NextQuery(json?.next_page_params);
+        if (!qs) {
+          exhausted = true;
+          break;
+        }
+        nextQs = qs;
+      } catch (_) {
+        break;
+      }
+    }
+    return { items: allItems, exhausted };
+  }
+
+  // Fire requests in parallel; only txListPromise touches Blockscout v1 (/api) so it never self-rate-limits
+  const addrPromise = !existing?.accountInfo
+    ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}`).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))
+    : Promise.resolve(null);
+
+  const txListPromise =
+    needXtz && !existing?.exhausted
+      ? fetchBlockscoutV1WithRetry(
+          `${ETHERLINK_EXPLORER_BASE}/api?module=account&action=txlist&address=${enc}&page=1&offset=${batchSize}&sort=desc`
+        )
+      : Promise.resolve(null);
+
+  const v2SamplePromise =
+    needXtz && !existing?.exhausted
+      ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}/transactions`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      : Promise.resolve(null);
+
+  const internalV2Promise =
+    needXtz && !existing?.internalChecked
+      ? fetchV2InternalPaginated(enc, 12)
+      : Promise.resolve(null);
+
+  const tokensBalPromise =
+    needFa && !existing?.accountInfo?.tokenBalancesFetched
+      ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}/tokens?type=ERC-20`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      : Promise.resolve(null);
+
+  const tokenTxPromise =
+    needFa && !existing?.faExhausted
+      ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}/token-transfers?type=ERC-20&token=${ETHERLINK_USDT_CONTRACT}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      : Promise.resolve(null);
+
+  const rawHexNoPrefix = evmAddress.replace(/^0x/i, '');
+  const isFeedAddress = evmAddress === ETHERLINK_L2_FEED_ADDRESS;
+  const isWithdrawPrecompile = evmAddress === ETHERLINK_L2_WITHDRAW_PRECOMPILE;
+
+  const l1DepositsPromise =
+    needXtz && !existing?.l1DepositsChecked
+      ? fetch(
+          isFeedAddress
+            ? `https://kukai.api.tzkt.io/v1/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
+            : isWithdrawPrecompile
+            ? `https://kukai.api.tzkt.io/v1/operations/transactions?anyof.sender.target=${ETHERLINK_WITHDRAW_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,target,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
+            : `https://kukai.api.tzkt.io/v1/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&parameter.l2_address=${encodeURIComponent(rawHexNoPrefix)}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender&sort.desc=id&limit=200`
+        )
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => [])
+      : Promise.resolve(null);
+
+  const [
+    addrJson,
+    txListJson,
+    v2SampleJson,
+    intV2Result,
+    tokJson,
+    tokenTxJson,
+    l1DepositsRows
+  ] = await Promise.all([
+    addrPromise,
+    txListPromise,
+    v2SamplePromise,
+    internalV2Promise,
+    tokensBalPromise,
+    tokenTxPromise,
+    l1DepositsPromise
+  ]);
+
+  if (Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0 && !isFeedAddress && !isWithdrawPrecompile) {
+    let depMap = l2ToL1DepositorsMap.get(evmAddress);
+    if (!depMap) {
+      depMap = new Map();
+      l2ToL1DepositorsMap.set(evmAddress, depMap);
+    }
+    l1DepositsRows.forEach((op) => {
+      const sAddr = op.sender?.address;
+      const sAlias = op.sender?.alias || '';
+      const amt = parseFloat((op.amount || 0) / 1_000_000);
+      if (!sAddr || isRollupInternalParty(sAddr) || !amt || ! (amt > 0)) return;
+      let rec = depMap.get(sAddr);
+      if (!rec) {
+        rec = {
+          address: sAddr,
+          alias: sAlias && sAlias !== sAddr ? sAlias : '',
+          amount: 0,
+          count: 0,
+          txHashes: [],
+          txHashSet: new Set()
+        };
+        depMap.set(sAddr, rec);
+      }
+      if (op.hash && !rec.txHashSet.has(op.hash)) {
+        rec.txHashSet.add(op.hash);
+        rec.txHashes.push(op.hash);
+        rec.amount += amt;
+        rec.count += 1;
+      }
+    });
+  }
+
+  // 1. Build accountInfo
+  let accountInfo = existing?.accountInfo || null;
+  if (!accountInfo) {
+    const weiBal = parseFloat(addrJson?.coin_balance || '0');
+    const alias =
+      aliasLookup.get(evmAddress) ||
+      addrJson?.name ||
+      addrJson?.ens_domain_name ||
+      (addrJson?.token?.name ? `${addrJson.token.name} (${addrJson.token.symbol || ''})` : null);
+    if (alias) aliasLookup.set(evmAddress, alias);
+    accountInfo = {
+      alias: alias || null,
+      balance: (weiBal / 1e18) * 1_000_000, // Normalized to mutez for unified formatting
+      hasTokens: Boolean(addrJson?.has_tokens),
+      hasTokenTransfers: Boolean(addrJson?.has_token_transfers),
+      tokenBalances: { tzbtc: 0, usdt: 0 },
+      tokenBalancesFetched: !addrJson?.has_tokens
+    };
+  }
+
+  if (tokJson && accountInfo) {
+    const items = Array.isArray(tokJson?.items) ? tokJson.items : [];
+    items.forEach((item) => {
+      const sym = String(item.token?.symbol || '').toLowerCase();
+      const cAddr = String(item.token?.address_hash || '').toLowerCase();
+      const dec = Number(item.token?.decimals || 6);
+      const bal = parseFloat(item.value || '0') / Math.pow(10, dec);
+      if (sym === 'usdt' || cAddr === ETHERLINK_USDT_CONTRACT) {
+        accountInfo.tokenBalances.usdt = bal;
+      } else if (sym === 'tzbtc') {
+        accountInfo.tokenBalances.tzbtc = bal;
+      }
+    });
+    accountInfo.tokenBalancesFetched = true;
+  }
+
+  // Harvest contract/account aliases from v2 sample & internal txs
+  if (Array.isArray(v2SampleJson?.items)) {
+    v2SampleJson.items.forEach((tx) => {
+      rememberPartyAlias(tx.from);
+      rememberPartyAlias(tx.to);
+    });
+  }
+  if (Array.isArray(intV2Result?.items)) {
+    intV2Result.items.forEach((itx) => {
+      rememberPartyAlias(itx.from);
+      rememberPartyAlias(itx.to);
+    });
+  }
+
+  // 2. Parse Native XTZ Transactions on Etherlink L2
+  let txData = existing?.txData ? [...existing.txData] : [];
+  const seenKeys = new Set(txData.map((op) => op._dedupKey || op.hash));
+
+  // If viewing 0x0000...feed directly, hydrate both L1 bridge inflows (from KT1Wj8...) and L2 outflows (to 0x... recipients)
+  if (isFeedAddress && Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0) {
+    l1DepositsRows.forEach((op) => {
+      const rawAmt = Number(op.amount || 0);
+      if (!rawAmt || rawAmt <= 0) return;
+      const l1SenderAddr = op.sender?.address || '';
+      const l1SenderAlias = op.sender?.alias || '';
+      const l2TargetAddr = extractEtherlinkEvmAddress(op.parameter);
+
+      if (l1SenderAddr && !isRollupInternalParty(l1SenderAddr)) {
+        const inKey = `${op.hash}:l1-in:${l1SenderAddr}:${ETHERLINK_L2_FEED_ADDRESS}`;
+        if (!seenKeys.has(inKey)) {
+          seenKeys.add(inKey);
+          txData.push({
+            _dedupKey: inKey,
+            id: Number(op.id || 0),
+            hash: op.hash,
+            timestamp: op.timestamp,
+            amount: rawAmt,
+            sender: { address: ETHERLINK_BRIDGE_CONTRACT, alias: 'Etherlink Bridge' },
+            target: { address: ETHERLINK_L2_FEED_ADDRESS, alias: 'Etherlink L1 Deposit' },
+            l1SubBranch: { address: l1SenderAddr, alias: l1SenderAlias }
+          });
+        }
+      }
+
+      if (l2TargetAddr) {
+        const outKey = `${op.hash}:l2-out:${ETHERLINK_L2_FEED_ADDRESS}:${l2TargetAddr}`;
+        if (!seenKeys.has(outKey)) {
+          seenKeys.add(outKey);
+          txData.push({
+            _dedupKey: outKey,
+            id: Number(op.id || 0),
+            hash: op.hash,
+            timestamp: op.timestamp,
+            amount: rawAmt,
+            sender: { address: ETHERLINK_L2_FEED_ADDRESS, alias: 'Etherlink L1 Deposit' },
+            target: makeParty(l2TargetAddr)
+          });
+        }
+      }
+    });
+  }
+
+  // If viewing 0xff00...0001 directly, also hydrate L2->L1 withdrawals from TzKT KT1BGwy...
+  if (isWithdrawPrecompile && Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0) {
+    const paramByHash = new Map();
+    l1DepositsRows.forEach((op) => {
+      if (op?.hash && op?.parameter) paramByHash.set(op.hash, op.parameter);
+    });
+    l1DepositsRows.forEach((op) => {
+      const rawAmt = Number(op.amount || 0);
+      if (!rawAmt || rawAmt <= 0) return;
+      const param = op.parameter || paramByHash.get(op.hash);
+      const l2Caller = extractEtherlinkEvmAddress(param);
+      if (op.target?.address === ETHERLINK_WITHDRAW_CONTRACT && l2Caller) {
+        const inKey = `${op.hash}:l2-in:${l2Caller}:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}`;
+        if (!seenKeys.has(inKey)) {
+          seenKeys.add(inKey);
+          txData.push({
+            _dedupKey: inKey,
+            id: Number(op.id || 0),
+            hash: op.hash,
+            timestamp: op.timestamp,
+            amount: rawAmt,
+            sender: makeParty(l2Caller),
+            target: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' }
+          });
+        }
+      } else if (
+        op.sender?.address === ETHERLINK_WITHDRAW_CONTRACT &&
+        op.target?.address &&
+        !isRollupInternalParty(op.target.address)
+      ) {
+        const outKey = `${op.hash}:l1-out:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}:${op.target.address}`;
+        if (!seenKeys.has(outKey)) {
+          seenKeys.add(outKey);
+          txData.push({
+            _dedupKey: outKey,
+            id: Number(op.id || 0),
+            hash: op.hash,
+            timestamp: op.timestamp,
+            amount: rawAmt,
+            sender: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' },
+            target: { address: ETHERLINK_WITHDRAW_CONTRACT, alias: 'Etherlink Withdraw' },
+            l1WithdrawTarget: op.target.address
+          });
+        }
+      }
+    });
+  }
+
+  let topExhausted = true;
+  let minTopBlock = Infinity;
+
+  if (Array.isArray(txListJson?.result)) {
+    topExhausted = txListJson.result.length < batchSize;
+    txListJson.result.forEach((tx) => {
+      const blk = Number(tx.blockNumber || 0);
+      if (blk > 0 && blk < minTopBlock) minTopBlock = blk;
+
+      const isOk = tx.isError === '0' && tx.txreceipt_status !== '0';
+      const rawVal = parseFloat(tx.value || '0');
+      if (!isOk || !rawVal || rawVal <= 0) return;
+
+      const sender = makeParty(tx.from);
+      const target = makeParty(tx.to);
+      if (!sender.address || !target.address) return;
+
+      const dedupKey = `${tx.hash}:${sender.address}:${target.address}`;
+      if (seenKeys.has(dedupKey)) return;
+      seenKeys.add(dedupKey);
+
+      const l1WithdrawTarget =
+        target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE
+          ? extractTezosL1AddressFromHex(tx.input)
+          : null;
+
+      const normAmt = (rawVal / 1e18) * 1_000_000;
+      const tsMs = Number(tx.timeStamp) * 1000;
+      txData.push({
+        _dedupKey: dedupKey,
+        id: blk,
+        hash: tx.hash,
+        timestamp: tsMs,
+        amount: normAmt,
+        sender,
+        target,
+        l1WithdrawTarget
+      });
+
+      if (isWithdrawPrecompile && target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE && l1WithdrawTarget) {
+        const outKey = `${tx.hash}:l1-out:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}:${l1WithdrawTarget}`;
+        if (!seenKeys.has(outKey)) {
+          seenKeys.add(outKey);
+          txData.push({
+            _dedupKey: outKey,
+            id: blk,
+            hash: tx.hash,
+            timestamp: tsMs,
+            amount: normAmt,
+            sender: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' },
+            target: { address: ETHERLINK_WITHDRAW_CONTRACT, alias: 'Etherlink Withdraw' },
+            l1WithdrawTarget
+          });
+        }
+      }
+    });
+  } else {
+    // Fallback if v1 txlist is unavailable: paginate v2 transactions so we never drop to a 50-tx sample
+    const maxV2Pages = Math.min(35, Math.max(1, Math.ceil(batchSize / 50)));
+    const v2Full =
+      v2SampleJson?.next_page_params && maxV2Pages > 1
+        ? await fetchV2TransactionsPaginated(enc, maxV2Pages)
+        : { items: v2SampleJson?.items || [], exhausted: !v2SampleJson?.next_page_params };
+    topExhausted = Boolean(v2Full.exhausted);
+
+    v2Full.items.forEach((tx) => {
+      rememberPartyAlias(tx.from);
+      rememberPartyAlias(tx.to);
+      const blk = Number(tx.block_number || 0);
+      if (blk > 0 && blk < minTopBlock) minTopBlock = blk;
+
+      const isOk = tx.status === 'ok' || tx.result === 'success';
+      const rawVal = parseFloat(tx.value || '0');
+      if (!isOk || !rawVal || rawVal <= 0) return;
+
+      const sender = makeParty(tx.from?.hash, tx.from?.name);
+      const target = makeParty(tx.to?.hash, tx.to?.name);
+      if (!sender.address || !target.address) return;
+
+      const dedupKey = `${tx.hash}:${sender.address}:${target.address}`;
+      if (seenKeys.has(dedupKey)) return;
+      seenKeys.add(dedupKey);
+
+      const l1WithdrawTarget =
+        target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE
+          ? extractTezosL1AddressFromHex(tx.raw_input)
+          : null;
+
+      const normAmt = (rawVal / 1e18) * 1_000_000;
+      txData.push({
+        _dedupKey: dedupKey,
+        id: blk,
+        hash: tx.hash,
+        timestamp: tx.timestamp,
+        amount: normAmt,
+        sender,
+        target,
+        l1WithdrawTarget
+      });
+
+      if (isWithdrawPrecompile && target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE && l1WithdrawTarget) {
+        const outKey = `${tx.hash}:l1-out:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}:${l1WithdrawTarget}`;
+        if (!seenKeys.has(outKey)) {
+          seenKeys.add(outKey);
+          txData.push({
+            _dedupKey: outKey,
+            id: blk,
+            hash: tx.hash,
+            timestamp: tx.timestamp,
+            amount: normAmt,
+            sender: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' },
+            target: { address: ETHERLINK_WITHDRAW_CONTRACT, alias: 'Etherlink Withdraw' },
+            l1WithdrawTarget
+          });
+        }
+      }
+    });
+  }
+
+  let intExhausted = true;
+  let minIntBlock = Infinity;
+
+  if (Array.isArray(intV2Result?.items)) {
+    intExhausted = Boolean(intV2Result.exhausted);
+    intV2Result.items.forEach((itx) => {
+      const blk = Number(itx.block_number || 0);
+      if (blk > 0 && blk < minIntBlock) minIntBlock = blk;
+
+      const rawVal = parseFloat(itx.value || '0');
+      if (!itx.success || !rawVal || rawVal <= 0) return;
+      const sender = makeParty(itx.from?.hash, itx.from?.name);
+      const target = makeParty(itx.to?.hash, itx.to?.name);
+      if (!sender.address || !target.address) return;
+      if (
+        sender.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE &&
+        seenKeys.has(`${itx.transaction_hash}:${ETHERLINK_L2_FEED_ADDRESS}:${target.address}`)
+      ) {
+        return;
+      }
+      const dedupKey = `${itx.transaction_hash}:${sender.address}:${target.address}:${itx.index ?? ''}`;
+      const pairKey = `${itx.transaction_hash}:${sender.address}:${target.address}`;
+      if (seenKeys.has(dedupKey) || seenKeys.has(pairKey)) return;
+      seenKeys.add(dedupKey);
+      seenKeys.add(pairKey);
+      txData.push({
+        _dedupKey: dedupKey,
+        id: blk,
+        hash: itx.transaction_hash,
+        timestamp: itx.timestamp,
+        amount: (rawVal / 1e18) * 1_000_000,
+        sender,
+        target
+      });
+    });
+  }
+
+  // Align the block window if either top-level or internal transactions were truncated at the fetch limit
+  if (!isFeedAddress && !isWithdrawPrecompile && (!topExhausted || !intExhausted)) {
+    const cutoffBlock = Math.max(
+      !topExhausted && Number.isFinite(minTopBlock) ? minTopBlock : 0,
+      !intExhausted && Number.isFinite(minIntBlock) ? minIntBlock : 0
+    );
+    if (cutoffBlock > 0) {
+      txData = txData.filter((op) => !op.id || op.id >= cutoffBlock);
+    }
+  }
+
+  // 3. Parse ERC-20 Token Transfers (USDT / tzBTC) when enabled
+  const faData = existing?.faData ? [...existing.faData] : [];
+  if (Array.isArray(tokenTxJson?.items)) {
+    tokenTxJson.items.forEach((tr) => {
+      rememberPartyAlias(tr.from);
+      rememberPartyAlias(tr.to);
+      const sym = String(tr.token?.symbol || '').toLowerCase();
+      const cAddr = String(tr.token?.address_hash || '').toLowerCase();
+      let mappedContract = null;
+      if (sym === 'usdt' || cAddr === ETHERLINK_USDT_CONTRACT) {
+        mappedContract = TOKEN_DEFINITIONS.usdt.contract;
+      } else if (sym === 'tzbtc') {
+        mappedContract = TOKEN_DEFINITIONS.tzbtc.contract;
+      }
+      if (!mappedContract) return;
+
+      const fromParty = makeParty(tr.from?.hash, tr.from?.name);
+      const toParty = makeParty(tr.to?.hash, tr.to?.name);
+      const dec = Number(tr.total?.decimals || tr.token?.decimals || 6);
+      const targetDec = mappedContract === TOKEN_DEFINITIONS.tzbtc.contract ? 8 : 6;
+      const rawVal = parseFloat(tr.total?.value || '0');
+      const scaledAmount = (rawVal / Math.pow(10, dec)) * Math.pow(10, targetDec);
+
+      faData.push({
+        id: Number(tr.block_number || 0),
+        timestamp: tr.timestamp,
+        'token.contract.address': mappedContract,
+        from: fromParty.address ? fromParty : null,
+        to: toParty.address ? toParty : null,
+        amount: String(scaledAmount),
+        hash: tr.transaction_hash
+      });
+    });
+  }
+
+  cache.set(evmAddress, {
+    txData,
+    specialOps: [],
+    specialOpsFetched: true,
+    internalChecked: true,
+    l1DepositsChecked: true,
+    limit: Math.max(txData.length, numLimit),
+    lastOffset: null,
+    exhausted: true,
+    faData,
+    faLimit: needFa ? Math.max(faData.length, numLimit) : existing?.faLimit || 0,
+    faLastOffset: null,
+    faExhausted: needFa ? true : Boolean(existing?.faExhausted),
+    accountInfo
+  });
+
+  return {
+    operations: needXtz ? txData.slice(0, numLimit) : [],
+    faTransfers: needFa ? faData.slice(0, numLimit) : [],
+    accountInfo
+  };
 }
 
 async function fetchFaTransfersBatch(tezosAddress, lastId = 0, batchLimit = 10000) {
@@ -965,6 +1775,10 @@ function formatTxRefSync(ref) {
 }
 
 async function fetchAllData(tezosAddress, requestedLimit) {
+  if (isEtherlinkAddress(tezosAddress)) {
+    return fetchEtherlinkData(tezosAddress, requestedLimit);
+  }
+
   const numLimit = Number(requestedLimit) || 10000;
   const needXtz = viewConfig.enabledTokens.has('xtz');
   const needFa = viewConfig.faEnabled;
@@ -1070,6 +1884,7 @@ async function fetchAllData(tezosAddress, requestedLimit) {
         break;
       }
     }
+    await enrichBridgeDepositParameters(txData);
     xtzLimit = Math.max(counter, existing?.limit || 0, numLimit);
   }
 
@@ -1132,10 +1947,16 @@ async function fetchAllData(tezosAddress, requestedLimit) {
 // ============================================================================
 
 function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
+  const normTargetAddr = isEtherlinkAddress(tezosAddress) ? tezosAddress.trim().toLowerCase() : tezosAddress;
   const inflowsMap = new Map(); // Map<realAddress, UnifiedNodeEntry>
   const outflowsMap = new Map(); // Map<realAddress, UnifiedNodeEntry>
   const addressToAliasMap = new Map();
   const txHashesMap = new Map();
+
+  addressToAliasMap.set(ETHERLINK_BRIDGE_CONTRACT, 'Etherlink Bridge');
+  addressToAliasMap.set(ETHERLINK_WITHDRAW_CONTRACT, 'Etherlink Withdraw');
+  addressToAliasMap.set(ETHERLINK_L2_FEED_ADDRESS, 'Etherlink L1 Deposit');
+  addressToAliasMap.set(ETHERLINK_L2_WITHDRAW_PRECOMPILE, 'Etherlink L1 Withdraw');
 
   function recordUnifiedFlow(map, keyAddress, displayAlias, amount, timestamp, opRef, isSpecial = false, tokenKey = 'xtz') {
     if (!amount || amount <= 0) return;
@@ -1150,6 +1971,8 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
         address: displayAlias || keyAddress,
         tokenMap: new Map(), // Map<tokenKey, TokenSubFlow>
         tokenFlows: [],
+        subBranchesMap: new Map(), // Map<branchAddr, SubBranchEntry>
+        subBranches: [],
         amount: 0,
         equivalentTez: 0,
         count: 0,
@@ -1199,17 +2022,83 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
     }
   }
 
+  function recordSubBranch(map, parentKeyAddr, branchAddr, branchAlias, network, amount, opRef) {
+    if (!branchAddr || !amount || amount <= 0) return;
+    const nodeEntry = map.get(parentKeyAddr);
+    if (!nodeEntry) return;
+    let b = nodeEntry.subBranchesMap.get(branchAddr);
+    if (!b) {
+      b = {
+        address: branchAddr,
+        alias: branchAlias && branchAlias !== branchAddr ? branchAlias : '',
+        network,
+        amount: 0,
+        count: 0,
+        txHashes: [],
+        txHashSet: new Set()
+      };
+      nodeEntry.subBranchesMap.set(branchAddr, b);
+    } else if (!b.alias && branchAlias && branchAlias !== branchAddr) {
+      b.alias = branchAlias;
+    }
+    b.amount += amount;
+    b.count += 1;
+    if (opRef && !b.txHashSet.has(opRef)) {
+      b.txHashSet.add(opRef);
+      b.txHashes.push(opRef);
+    }
+  }
+
+  function rememberL1BridgeDeposit(evmAddr, l1SenderAddr, l1SenderAlias, amount, opHash) {
+    if (!evmAddr || !l1SenderAddr || !amount || amount <= 0) return;
+    let depMap = l2ToL1DepositorsMap.get(evmAddr);
+    if (!depMap) {
+      depMap = new Map();
+      l2ToL1DepositorsMap.set(evmAddr, depMap);
+    }
+    let rec = depMap.get(l1SenderAddr);
+    if (!rec) {
+      rec = {
+        address: l1SenderAddr,
+        alias: l1SenderAlias && l1SenderAlias !== l1SenderAddr ? l1SenderAlias : '',
+        amount: 0,
+        count: 0,
+        txHashes: [],
+        txHashSet: new Set()
+      };
+      depMap.set(l1SenderAddr, rec);
+    }
+    if (opHash && !rec.txHashSet.has(opHash)) {
+      rec.txHashSet.add(opHash);
+      rec.txHashes.push(opHash);
+      rec.amount += amount;
+      rec.count += 1;
+    }
+  }
+
   // 1. Parse Native XTZ Operations if XTZ is enabled
   if (viewConfig.enabledTokens.has('xtz') && Array.isArray(data)) {
     data.forEach((operation) => {
       const senderAddr = operation.sender?.address || '';
       const targetAddr = operation.target?.address || '';
-      const senderAlias = operation.sender?.alias || senderAddr;
-      const targetAlias = operation.target?.alias || targetAddr;
+      const senderAlias =
+        operation.sender?.alias ||
+        (senderAddr === ETHERLINK_BRIDGE_CONTRACT
+          ? 'Etherlink Bridge'
+          : senderAddr === ETHERLINK_WITHDRAW_CONTRACT
+          ? 'Etherlink Withdraw'
+          : senderAddr);
+      const targetAlias =
+        operation.target?.alias ||
+        (targetAddr === ETHERLINK_BRIDGE_CONTRACT
+          ? 'Etherlink Bridge'
+          : targetAddr === ETHERLINK_WITHDRAW_CONTRACT
+          ? 'Etherlink Withdraw'
+          : targetAddr);
       const timestamp = new Date(operation.timestamp);
 
       if (operation.type === 'activation') {
-        const accAddr = operation.account?.address || tezosAddress;
+        const accAddr = operation.account?.address || normTargetAddr;
         const accAlias = operation.account?.alias || accAddr;
         addressToAliasMap.set(accAddr, accAlias);
 
@@ -1217,7 +2106,7 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
         const amount = parseFloat(operation.balance / 1_000_000);
         recordUnifiedFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true, 'xtz');
       } else if (operation.type === 'migration' && operation.kind === 'bootstrap') {
-        const accAddr = operation.account?.address || tezosAddress;
+        const accAddr = operation.account?.address || normTargetAddr;
         const accAlias = operation.account?.alias || accAddr;
         addressToAliasMap.set(accAddr, accAlias);
 
@@ -1225,7 +2114,7 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
         const amount = parseFloat(operation.balanceChange / 1_000_000);
         recordUnifiedFlow(inflowsMap, specialKey, specialKey, amount, timestamp, operation.hash, true, 'xtz');
       } else if (operation.type === 'migration' && operation.kind === 'subsidy') {
-        const accAddr = operation.account?.address || tezosAddress;
+        const accAddr = operation.account?.address || normTargetAddr;
         const accAlias = operation.account?.alias || accAddr;
         addressToAliasMap.set(accAddr, accAlias);
 
@@ -1238,11 +2127,11 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
           const origAlias = operation.originatedContract?.alias || origAddr;
           const amount = parseFloat(operation.contractBalance / 1_000_000);
 
-          if (senderAddr === tezosAddress && origAddr) {
+          if (senderAddr === normTargetAddr && origAddr) {
             addressToAliasMap.set(senderAddr, senderAlias);
             addressToAliasMap.set(origAddr, origAlias);
             recordUnifiedFlow(outflowsMap, origAddr, origAlias, amount, timestamp, operation.hash, false, 'xtz');
-          } else if (origAddr === tezosAddress && senderAddr) {
+          } else if (origAddr === normTargetAddr && senderAddr) {
             addressToAliasMap.set(senderAddr, senderAlias);
             addressToAliasMap.set(origAddr, origAlias);
             recordUnifiedFlow(inflowsMap, senderAddr, senderAlias, amount, timestamp, operation.hash, false, 'xtz');
@@ -1254,15 +2143,76 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
 
         const amount = parseFloat(operation.amount / 1_000_000);
         if (amount > 0) {
-          if (senderAddr === tezosAddress && targetAddr) {
-            recordUnifiedFlow(outflowsMap, targetAddr, targetAlias, amount, timestamp, operation.hash, false, 'xtz');
+          const l1BridgePeer =
+            targetAddr === ETHERLINK_BRIDGE_CONTRACT ? senderAddr : targetAddr;
+          const evmBridgeAddr =
+            !isRollupInternalParty(l1BridgePeer) &&
+            (targetAddr === ETHERLINK_BRIDGE_CONTRACT ||
+              senderAddr === ETHERLINK_WITHDRAW_CONTRACT ||
+              targetAddr === ETHERLINK_WITHDRAW_CONTRACT)
+              ? extractEtherlinkEvmAddress(operation.parameter)
+              : null;
+
+          if (evmBridgeAddr && targetAddr === ETHERLINK_BRIDGE_CONTRACT && senderAddr) {
+            rememberL1BridgeDeposit(evmBridgeAddr, senderAddr, senderAlias, amount, operation.hash);
           }
-          if (targetAddr === tezosAddress && senderAddr && senderAddr !== tezosAddress) {
+
+          if (senderAddr === normTargetAddr && targetAddr) {
+            recordUnifiedFlow(outflowsMap, targetAddr, targetAlias, amount, timestamp, operation.hash, false, 'xtz');
+            if (evmBridgeAddr) {
+              recordSubBranch(outflowsMap, targetAddr, evmBridgeAddr, '', 'etherlink', amount, operation.hash);
+            }
+            if (operation.l1WithdrawTarget) {
+              recordSubBranch(
+                outflowsMap,
+                targetAddr,
+                operation.l1WithdrawTarget,
+                '',
+                'tezos',
+                amount,
+                operation.hash
+              );
+            }
+          }
+          if (targetAddr === normTargetAddr && senderAddr && senderAddr !== normTargetAddr) {
             recordUnifiedFlow(inflowsMap, senderAddr, senderAlias, amount, timestamp, operation.hash, false, 'xtz');
+            if (evmBridgeAddr) {
+              recordSubBranch(inflowsMap, senderAddr, evmBridgeAddr, '', 'etherlink', amount, operation.hash);
+            }
+            if (operation.l1SubBranch?.address) {
+              recordSubBranch(
+                inflowsMap,
+                senderAddr,
+                operation.l1SubBranch.address,
+                operation.l1SubBranch.alias || '',
+                'tezos',
+                amount,
+                operation.hash
+              );
+            }
           }
         }
       }
     });
+
+    // If viewing an Etherlink L2 address that has known L1 depositors via the feed, attach L1 branches
+    if (isEtherlinkAddress(normTargetAddr) && inflowsMap.has(ETHERLINK_L2_FEED_ADDRESS)) {
+      const knownL1Map = l2ToL1DepositorsMap.get(normTargetAddr);
+      if (knownL1Map) {
+        const feedEntry = inflowsMap.get(ETHERLINK_L2_FEED_ADDRESS);
+        knownL1Map.forEach((rec) => {
+          feedEntry.subBranchesMap.set(rec.address, {
+            address: rec.address,
+            alias: rec.alias,
+            network: 'tezos',
+            amount: rec.amount,
+            count: rec.count,
+            txHashes: [...rec.txHashes],
+            txHashSet: new Set(rec.txHashes)
+          });
+        });
+      }
+    }
   }
 
   // 2. Parse FA Token Transfers (tzBTC, USDt) when FA Tokens switch is enabled
@@ -1288,15 +2238,15 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
       if (transfer.to?.address) addressToAliasMap.set(toAddr, toAlias);
 
       const txId = transfer.transactionId;
-      const opRef = txId
-        ? txIdToHashCache.get(Number(txId)) || `txid:${txId}`
-        : '';
+      const opRef =
+        transfer.hash ||
+        (txId ? txIdToHashCache.get(Number(txId)) || `txid:${txId}` : '');
 
-      if (fromAddr === tezosAddress && toAddr) {
+      if (fromAddr === normTargetAddr && toAddr) {
         const isSpecial = toAddr.startsWith('~');
         recordUnifiedFlow(outflowsMap, toAddr, toAlias, amount, timestamp, opRef, isSpecial, tokenKey);
       }
-      if (toAddr === tezosAddress && fromAddr && fromAddr !== tezosAddress) {
+      if (toAddr === normTargetAddr && fromAddr && fromAddr !== normTargetAddr) {
         const isSpecial = fromAddr.startsWith('~');
         recordUnifiedFlow(inflowsMap, fromAddr, fromAlias, amount, timestamp, opRef, isSpecial, tokenKey);
       }
@@ -1327,6 +2277,9 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
       entry.tokenTicker = keptFlows.map((tf) => tf.tokenTicker).join(' + ');
       entry.amount = keptFlows.length === 1 ? keptFlows[0].amount : entry.equivalentTez;
       entry.count = keptFlows.reduce((s, tf) => s + tf.count, 0);
+      entry.subBranches = entry.subBranchesMap
+        ? Array.from(entry.subBranchesMap.values()).sort((a, b) => b.amount - a.amount)
+        : [];
       list.push(entry);
     });
     return list;
@@ -1346,7 +2299,7 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
   });
 
   outflows.forEach((entry) => {
-    entry.isSelfTransfer = entry.realAddress === tezosAddress;
+    entry.isSelfTransfer = entry.realAddress === normTargetAddr;
     entry.isBidirectional = inflowAddresses.has(entry.realAddress);
     const prev = txHashesMap.get(entry.realAddress) || [];
     const merged = Array.from(new Set([...prev, ...entry.txHashes]));
@@ -1798,6 +2751,9 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         if (retEntry && retEntry.tokenFlows && retEntry.tokenFlows.length > 0) {
           item.hasCircularReturn = true;
           item.returnEntry = retEntry;
+          if ((!item.subBranches || item.subBranches.length === 0) && retEntry.subBranches?.length > 0) {
+            item.subBranches = retEntry.subBranches;
+          }
           item.returnTokenFlows = retEntry.tokenFlows.map((rtf) => {
             const outTkTotal = totalOutByToken.get(rtf.tokenKey) || 0;
             return {
@@ -1830,9 +2786,10 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   if (hdrOut) {
     hdrOut.textContent = `Outflows (${externalRawOutflows.length} Receivers • ${formatMultiTokenSummaryPlain(totalOutByToken, true)})`;
   }
+  const isL2Hub = isEtherlinkAddress(targetAddress);
   const hubAlias = addressToAliasMap.get(targetAddress) || currentAccountInfo?.alias || shortenAddress(targetAddress);
   if (hdrCenter) {
-    hdrCenter.textContent = `Target Hub — ${hubAlias}`;
+    hdrCenter.textContent = `${isL2Hub ? 'Etherlink L2 Hub' : 'Target Hub'} — ${hubAlias}`;
   }
 
   if (inflows.length === 0 && outflows.length === 0 && !selfLoopEntry) {
@@ -1905,6 +2862,16 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         rtf.normWeight = (rtf.weight || 0) / maxWeight;
       });
 
+      const allBranches = !item.isAggregate && Array.isArray(item.subBranches) ? item.subBranches : [];
+      const isBranchesExpanded = viewConfig.expandedBranchNodes?.has(item.realAddress);
+      const canCollapseBranches = allBranches.length > 6;
+      const visibleBranches =
+        !canCollapseBranches || isBranchesExpanded ? allBranches : allBranches.slice(0, 5);
+      const hiddenBranchCount = Math.max(0, allBranches.length - visibleBranches.length);
+      const totalBranchRows = visibleBranches.length + (canCollapseBranches ? 1 : 0);
+      const branchZoneH =
+        totalBranchRows > 0 ? 5 + totalBranchRows * 22 + (totalBranchRows - 1) * 4 : 0;
+
       const node = {
         ...item,
         index: idx,
@@ -1912,11 +2879,16 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         y: curY,
         w: cardW,
         h,
+        visibleBranches,
+        hiddenBranchCount,
+        canCollapseBranches,
+        isBranchesExpanded: Boolean(isBranchesExpanded),
+        branchZoneH,
         weight: totalNodeWeight,
         normWeight: Math.min(1, norm),
         returnWeight: totalRetWeight
       };
-      curY += h + nodeGap;
+      curY += h + branchZoneH + nodeGap;
       return node;
     });
     const totalColH = laidOut.length > 0 ? curY - nodeGap - padYTop : 0;
@@ -2503,6 +3475,65 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         ? 'rgba(129, 140, 248, 0.5)'
         : 'rgba(255, 255, 255, 0.1)';
 
+    const branchItemsMarkup = (n.visibleBranches || [])
+      .map((b, bIdx) => {
+        const bH = 22;
+        const bY = n.y + n.h + 5 + bIdx * (bH + 4);
+        const bMidY = bY + bH / 2;
+        const indentX = 26;
+        const bX = n.x + indentX;
+        const bW = n.w - indentX;
+        const trunkX = n.x + 13;
+        const lineD = `M ${trunkX} ${n.y + n.h} L ${trunkX} ${bMidY - 5} Q ${trunkX} ${bMidY} ${trunkX + 5} ${bMidY} L ${bX} ${bMidY}`;
+        const isL2Branch = b.network === 'etherlink';
+        const netLabel = isL2Branch ? 'L2 ↗' : 'L1 ↗';
+        const dispAddr = b.alias ? truncateText(b.alias, 16) : shortenAddress(b.address);
+        const amtStr = `+${formatTez(b.amount, true)}`;
+
+        return `
+          <g class="sankey-l2-branch" data-branch-addr="${escapeHtml(b.address)}" data-branch-net="${escapeHtml(b.network || 'etherlink')}" data-side="${side}" data-index="${n.index}" data-branch-index="${bIdx}">
+            <path class="l2-branch-line" d="${lineD}" fill="none" stroke="${isL2Branch ? '#10b981' : '#818cf8'}" stroke-width="1.4" stroke-dasharray="2.5 2" />
+            <circle cx="${bX}" cy="${bMidY}" r="2.2" fill="${isL2Branch ? '#34d399' : '#a5b4fc'}" />
+            <rect class="l2-branch-pill" x="${bX}" y="${bY}" width="${bW}" height="${bH}" rx="6"
+                  fill="${isL2Branch ? 'rgba(6, 78, 59, 0.58)' : 'rgba(30, 27, 75, 0.7)'}"
+                  stroke="${isL2Branch ? 'rgba(16, 185, 129, 0.55)' : 'rgba(129, 140, 248, 0.55)'}" stroke-width="1" />
+            <rect x="${bX + 5}" y="${bY + 3.5}" width="32" height="15" rx="4"
+                  fill="${isL2Branch ? 'rgba(16, 185, 129, 0.25)' : 'rgba(99, 102, 241, 0.28)'}" />
+            <text x="${bX + 21}" y="${bMidY + 3.3}" text-anchor="middle" fill="${isL2Branch ? '#6ee7b7' : '#c7d2fe'}" font-family="Inter, sans-serif" font-size="8.6" font-weight="700">${escapeHtml(netLabel)}</text>
+            <text x="${bX + 43}" y="${bMidY + 3.4}" fill="#e2e8f0" font-family="JetBrains Mono, monospace" font-size="9.6" font-weight="600">${escapeHtml(dispAddr)}</text>
+            <text x="${bX + bW - 8}" y="${bMidY + 3.4}" text-anchor="end" fill="${isL2Branch ? '#34d399' : '#a5b4fc'}" font-family="JetBrains Mono, monospace" font-size="9.6" font-weight="700">${escapeHtml(amtStr)}</text>
+          </g>
+        `;
+      })
+      .join('');
+
+    let branchToggleMarkup = '';
+    if (n.canCollapseBranches) {
+      const tIdx = (n.visibleBranches || []).length;
+      const bH = 22;
+      const bY = n.y + n.h + 5 + tIdx * (bH + 4);
+      const bMidY = bY + bH / 2;
+      const indentX = 26;
+      const bX = n.x + indentX;
+      const bW = n.w - indentX;
+      const trunkX = n.x + 13;
+      const lineD = `M ${trunkX} ${n.y + n.h} L ${trunkX} ${bMidY - 5} Q ${trunkX} ${bMidY} ${trunkX + 5} ${bMidY} L ${bX} ${bMidY}`;
+      const toggleLabel = n.isBranchesExpanded
+        ? `Collapse ${n.subBranches.length} bridged addresses ▴`
+        : `+ ${n.hiddenBranchCount} more bridged addresses • Click to expand ▾`;
+
+      branchToggleMarkup = `
+        <g class="sankey-l2-branch" data-branch-toggle="true" data-node-addr="${escapeHtml(n.realAddress)}" data-side="${side}" data-index="${n.index}">
+          <path class="l2-branch-line" d="${lineD}" fill="none" stroke="#64748b" stroke-width="1.3" stroke-dasharray="2.5 2" />
+          <rect class="l2-branch-pill" x="${bX}" y="${bY}" width="${bW}" height="${bH}" rx="6"
+                fill="rgba(30, 41, 82, 0.72)" stroke="rgba(148, 163, 184, 0.45)" stroke-width="1" />
+          <text x="${bX + bW / 2}" y="${bMidY + 3.4}" text-anchor="middle" fill="#cbd5e1" font-family="Inter, sans-serif" font-size="9.4" font-weight="600">${escapeHtml(toggleLabel)}</text>
+        </g>
+      `;
+    }
+
+    const branchesMarkup = branchItemsMarkup + branchToggleMarkup;
+
     return `
       <g class="sankey-node-group" data-side="${side}" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-left-x="${textLeftX}" data-right-x="${amountRightX}">
         <!-- Base Card -->
@@ -2536,6 +3567,9 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
 
         <!-- Right-aligned Multi-Token Amounts -->
         ${rightMetricsMarkup}
+
+        <!-- Etherlink L2 / L1 Bridge Destination Tiny Branches -->
+        ${branchesMarkup}
       </g>
     `;
   }
@@ -2547,7 +3581,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   const hubRawAlias = addressToAliasMap.get(targetAddress) || currentAccountInfo?.alias || '';
   const hubTitle = truncateText(hubRawAlias || shortenAddress(targetAddress), 22);
   const hubShortAddr = shortenAddress(targetAddress);
-  const hubInitial = (hubRawAlias || targetAddress || 'T').replace(/^~/, '').charAt(0).toUpperCase();
+  const hubInitial = (hubRawAlias || (isL2Hub ? 'E' : targetAddress) || 'T').replace(/^~/, '').charAt(0).toUpperCase();
   const hubAvatarUrl = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(targetAddress)}`;
   const hubMidX = hubX + hubW / 2;
   const contentTopY = hubCenterY - 96 - Math.floor(extraHubRowsH / 2);
@@ -2581,6 +3615,8 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     .join('');
 
   const hubFooterY = contentTopY + 132 + tokensForHubDisplay.length * 34 + 12;
+  const hubBadgeText = isL2Hub ? 'ETHERLINK L2' : 'TARGET HUB';
+  const hubBadgeW = isL2Hub ? 104 : 92;
 
   const centerHubMarkup = `
     <g class="sankey-hub-group" id="sankey-center-hub" style="cursor: pointer;">
@@ -2590,11 +3626,11 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
 
       <!-- Outer Glow -->
       <rect x="${hubX - 4}" y="${hubY - 4}" width="${hubW + 8}" height="${hubCardH + 8}" rx="18"
-            fill="none" stroke="rgba(99, 102, 241, 0.3)" stroke-width="2" />
+            fill="none" stroke="${isL2Hub ? 'rgba(16, 185, 129, 0.32)' : 'rgba(99, 102, 241, 0.3)'}" stroke-width="2" />
 
       <!-- Main Hub Body -->
       <rect x="${hubX}" y="${hubY}" width="${hubW}" height="${hubCardH}" rx="14"
-            fill="url(#grad-hub)" stroke="#818cf8" stroke-width="1.5" />
+            fill="url(#grad-hub)" stroke="${isL2Hub ? '#34d399' : '#818cf8'}" stroke-width="1.5" />
 
       <!-- Left Inflow Port Rail -->
       ${
@@ -2611,18 +3647,24 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       }
 
       <!-- Hub Badge -->
-      <rect x="${hubMidX - 46}" y="${contentTopY}" width="92" height="20" rx="10" fill="rgba(99, 102, 241, 0.25)" stroke="rgba(129, 140, 248, 0.4)" />
-      <text x="${hubMidX}" y="${contentTopY + 13}" text-anchor="middle" fill="#c7d2fe" font-family="Inter, sans-serif" font-size="9.5" font-weight="700" letter-spacing="0.8">
-        TARGET HUB
+      <rect x="${hubMidX - hubBadgeW / 2}" y="${contentTopY}" width="${hubBadgeW}" height="20" rx="10"
+            fill="${isL2Hub ? 'rgba(16, 185, 129, 0.22)' : 'rgba(99, 102, 241, 0.25)'}"
+            stroke="${isL2Hub ? 'rgba(52, 211, 153, 0.48)' : 'rgba(129, 140, 248, 0.4)'}" />
+      <text x="${hubMidX}" y="${contentTopY + 13}" text-anchor="middle" fill="${isL2Hub ? '#6ee7b7' : '#c7d2fe'}" font-family="Inter, sans-serif" font-size="9.5" font-weight="700" letter-spacing="0.8">
+        ${hubBadgeText}
       </text>
 
       <!-- Hub Avatar -->
-      <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR}" fill="#312e81" />
-      <text x="${hubMidX}" y="${avatarCy + 5}" text-anchor="middle" fill="#c7d2fe" font-family="Space Grotesk, Inter, sans-serif" font-size="14" font-weight="700">
+      <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR}" fill="${isL2Hub ? '#064e3b' : '#312e81'}" />
+      <text x="${hubMidX}" y="${avatarCy + 5}" text-anchor="middle" fill="${isL2Hub ? '#6ee7b7' : '#c7d2fe'}" font-family="Space Grotesk, Inter, sans-serif" font-size="14" font-weight="700">
         ${escapeHtml(hubInitial)}
       </text>
-      <image class="hub-avatar-img" href="${hubAvatarUrl}" x="${hubMidX - avatarR}" y="${avatarCy - avatarR}" width="${avatarR * 2}" height="${avatarR * 2}" clip-path="url(#hub-avatar-clip)" preserveAspectRatio="xMidYMid slice" />
-      <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR + 0.5}" fill="none" stroke="#818cf8" stroke-width="1.5" />
+      ${
+        !isL2Hub
+          ? `<image class="hub-avatar-img" href="${hubAvatarUrl}" x="${hubMidX - avatarR}" y="${avatarCy - avatarR}" width="${avatarR * 2}" height="${avatarR * 2}" clip-path="url(#hub-avatar-clip)" preserveAspectRatio="xMidYMid slice" />`
+          : ''
+      }
+      <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR + 0.5}" fill="none" stroke="${isL2Hub ? '#34d399' : '#818cf8'}" stroke-width="1.5" />
 
       <!-- Target Alias & Short Address -->
       <text class="hub-title-text" x="${hubMidX}" y="${contentTopY + 84}" text-anchor="middle" fill="#ffffff" font-family="Space Grotesk, Inter, sans-serif" font-size="14.5" font-weight="700">${escapeHtml(hubTitle)}</text>
@@ -2635,7 +3677,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       ${hubTokenMetricsMarkup}
 
       <!-- Hub Footer Hint -->
-      <text x="${hubMidX}" y="${hubFooterY}" text-anchor="middle" fill="#818cf8" font-family="Inter, sans-serif" font-size="10">
+      <text x="${hubMidX}" y="${hubFooterY}" text-anchor="middle" fill="${isL2Hub ? '#34d399' : '#818cf8'}" font-family="Inter, sans-serif" font-size="10">
         Click to copy address
       </text>
     </g>
@@ -2965,6 +4007,24 @@ function bindSankeyInteractions(
       `);
     });
 
+    if (entry.subBranches && entry.subBranches.length > 0) {
+      const topB = entry.subBranches[0];
+      const isL2B = topB.network === 'etherlink';
+      const moreCount = entry.subBranches.length - 1;
+      rowsHtml.push(`
+        <div class="tt-grid">
+          <div class="tt-metric" style="border: 1px solid ${isL2B ? 'rgba(52, 211, 153, 0.45)' : 'rgba(129, 140, 248, 0.45)'}; background: ${isL2B ? 'rgba(6, 78, 59, 0.35)' : 'rgba(30, 27, 75, 0.4)'};">
+            <div class="tt-metric-lbl">${isL2B ? 'Etherlink L2 Dest ↗' : 'Tezos L1 Origin ↗'}</div>
+            <div class="tt-metric-val" style="color: ${isL2B ? '#6ee7b7' : '#c7d2fe'};">${escapeHtml(shortenAddress(topB.address))}${moreCount > 0 ? ` (+${moreCount})` : ''}</div>
+          </div>
+          <div class="tt-metric" style="border: 1px solid ${isL2B ? 'rgba(52, 211, 153, 0.45)' : 'rgba(129, 140, 248, 0.45)'}; background: ${isL2B ? 'rgba(6, 78, 59, 0.35)' : 'rgba(30, 27, 75, 0.4)'};">
+            <div class="tt-metric-lbl">Bridged Volume</div>
+            <div class="tt-metric-val" style="color: ${isL2B ? '#34d399' : '#a5b4fc'};">+${escapeHtml(formatTez(topB.amount))} (${topB.count} tx)</div>
+          </div>
+        </div>
+      `);
+    }
+
     tooltip.innerHTML = `
       <div class="tt-header">
         <div class="tt-title-wrap">
@@ -2994,13 +4054,50 @@ function bindSankeyInteractions(
     positionTooltip(evt);
   }
 
+  function showBranchTooltip(evt, entry, branch) {
+    if (!tooltip || !entry || !branch) return;
+    const isL2 = branch.network === 'etherlink';
+    const netTitle = isL2 ? 'Etherlink L2 ↗' : 'Tezos L1 ↗';
+    const titleText = branch.alias || shortenAddress(branch.address);
+
+    tooltip.innerHTML = `
+      <div class="tt-header">
+        <div class="tt-title-wrap">
+          <div class="tt-alias">${escapeHtml(titleText)}</div>
+          <div class="tt-address">${escapeHtml(branch.address)}</div>
+        </div>
+        <span class="tt-badge ${isL2 ? 'l2' : 'hub'}">${escapeHtml(netTitle)}</span>
+      </div>
+      <div class="tt-grid">
+        <div class="tt-metric" style="border: 1px solid rgba(52, 211, 153, 0.45); background: rgba(6, 78, 59, 0.35);">
+          <div class="tt-metric-lbl">${isL2 ? 'Bridged to Etherlink L2' : 'Bridged to Tezos L1'}</div>
+          <div class="tt-metric-val" style="color: #34d399;">+${escapeHtml(formatTez(branch.amount))}</div>
+        </div>
+        <div class="tt-metric">
+          <div class="tt-metric-lbl">Bridge Transfers</div>
+          <div class="tt-metric-val">${branch.count} tx via ${escapeHtml(shortenAddress(entry.realAddress))}</div>
+        </div>
+      </div>
+      <div class="tt-footer">
+        <span><i class="fa-solid fa-layer-group"></i> ${isL2 ? 'Etherlink EVM (L2)' : 'Tezos Mainnet (L1)'}</span>
+        <span style="color: #6ee7b7; font-weight: 600;">Click to transfer to ${isL2 ? 'L2' : 'L1'} context ↗</span>
+      </div>
+    `;
+    tooltip.style.display = 'block';
+    cacheTooltipSize();
+    positionTooltip(evt);
+  }
+
   function showHubTooltip(evt) {
     if (!tooltip) return;
     const externalOutflows = rawOutflows.filter((e) => !e.isSelfTransfer);
     const inByToken = computeTokenTotalsMap(rawInflows);
     const outByToken = computeTokenTotalsMap(externalOutflows);
     const alias = addressToAliasMap.get(targetAddress) || currentAccountInfo?.alias || targetAddress;
-    const avatarUrl = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(targetAddress)}`;
+    const isL2 = isEtherlinkAddress(targetAddress);
+    const avatarUrl = isL2
+      ? 'icons/tezos.png'
+      : `https://services.tzkt.io/v1/avatars/${encodeURIComponent(targetAddress)}`;
 
     const activeTokens = ALL_TOKEN_ORDER.filter((tk) => viewConfig.enabledTokens.has(tk));
     const tokenRowsHtml = activeTokens
@@ -3032,12 +4129,12 @@ function bindSankeyInteractions(
           <div class="tt-alias">${escapeHtml(alias)}</div>
           <div class="tt-address">${escapeHtml(targetAddress)}</div>
         </div>
-        <span class="tt-badge hub">Target Hub</span>
+        <span class="tt-badge ${isL2 ? 'l2' : 'hub'}">${isL2 ? 'Etherlink L2' : 'Target Hub'}</span>
       </div>
       ${tokenRowsHtml}
       <div class="tt-footer">
         <span>Click to copy target address</span>
-        <span>Right-click to inspect</span>
+        <span>${isL2 ? 'Etherlink Blockscout API' : 'TzKT Mainnet API'}</span>
       </div>
     `;
     tooltip.style.display = 'block';
@@ -3063,7 +4160,7 @@ function bindSankeyInteractions(
     const relatedAddress = entry.realAddress;
     const rawRefs = txHashesMap.get(relatedAddress) || entry.txHashes || [];
     const resolvedHashes = await resolveTxRefsToHashes(rawRefs);
-    const txHashesText = resolvedHashes.map((hash) => `https://tzkt.io/${hash}`).join('\n');
+    const txHashesText = resolvedHashes.map((hash) => getExplorerTxUrl(hash, relatedAddress)).join('\n');
     const clipboardText = `${relatedAddress}\n\n${txHashesText}`;
     navigator.clipboard
       .writeText(clipboardText)
@@ -3106,6 +4203,31 @@ function bindSankeyInteractions(
   }
 
   svgEl.addEventListener('mouseover', (evt) => {
+    const branchEl = evt.target.closest('.sankey-l2-branch');
+    if (branchEl) {
+      const side = branchEl.dataset.side;
+      const idx = Number(branchEl.dataset.index);
+      const entry = getEntry(side, idx);
+      if (branchEl.dataset.branchToggle === 'true') {
+        const hoverKey = `branch-toggle:${side}:${idx}`;
+        if (currentHoverKey !== hoverKey && entry) {
+          currentHoverKey = hoverKey;
+          highlightConnection(entry.realAddress, side, idx, 'xtz');
+          if (tooltip) tooltip.style.display = 'none';
+        }
+        return;
+      }
+      const bIdx = Number(branchEl.dataset.branchIndex);
+      const hoverKey = `branch:${side}:${idx}:${bIdx}`;
+      const branch = entry?.visibleBranches?.[bIdx] || entry?.subBranches?.[bIdx];
+      if (currentHoverKey !== hoverKey && entry && branch) {
+        currentHoverKey = hoverKey;
+        highlightConnection(entry.realAddress, side, idx, 'xtz');
+        showBranchTooltip(evt, entry, branch);
+      }
+      return;
+    }
+
     const inspectBtn = evt.target.closest('.node-inspect-btn');
     const itemEl = evt.target.closest('.sankey-node-group, .sankey-link-wrap, #sankey-center-hub');
     if (!itemEl) {
@@ -3160,6 +4282,41 @@ function bindSankeyInteractions(
   svgEl.addEventListener('mouseleave', clearHighlight);
 
   svgEl.addEventListener('click', (evt) => {
+    const branchEl = evt.target.closest('.sankey-l2-branch');
+    if (branchEl) {
+      evt.stopPropagation();
+      clearHighlight();
+      if (branchEl.dataset.branchToggle === 'true') {
+        const nodeAddr = branchEl.dataset.nodeAddr;
+        if (nodeAddr) {
+          if (viewConfig.expandedBranchNodes.has(nodeAddr)) {
+            viewConfig.expandedBranchNodes.delete(nodeAddr);
+          } else {
+            viewConfig.expandedBranchNodes.add(nodeAddr);
+          }
+          renderCurrentSankey();
+        }
+        return;
+      }
+      const side = branchEl.dataset.side;
+      const idx = Number(branchEl.dataset.index);
+      const bIdx = Number(branchEl.dataset.branchIndex);
+      const entry = getEntry(side, idx);
+      const branch = entry?.visibleBranches?.[bIdx] || entry?.subBranches?.[bIdx];
+      const branchAddr = branch?.address || branchEl.dataset.branchAddr;
+      if (branchAddr) {
+        const txLinks = (branch?.txHashes || []).map((h) => getExplorerTxUrl(h, entry?.realAddress || branchAddr)).join('\n');
+        const clipText = txLinks ? `${branchAddr}\n\n${txLinks}` : branchAddr;
+        navigator.clipboard.writeText(clipText).catch(() => {});
+        console.log(clipText);
+        const isL2 = (branch?.network || branchEl.dataset.branchNet) === 'etherlink';
+        showNotification(`Switched to ${isL2 ? 'Etherlink L2' : 'Tezos L1'} context: ${shortenAddress(branchAddr)}`);
+        input.value = branchAddr.trim();
+        go();
+      }
+      return;
+    }
+
     const inspectBtn = evt.target.closest('.node-inspect-btn');
     if (inspectBtn) {
       evt.stopPropagation();
@@ -3233,7 +4390,7 @@ async function openInspectorDrawer(entry, side) {
     : `${tickersText} • Outflow (Receiver)`;
 
   const avatar = document.getElementById('drawer-avatar');
-  if (entry.realAddress.startsWith('~')) {
+  if (entry.realAddress.startsWith('~') || isEtherlinkAddress(entry.realAddress)) {
     avatar.src = 'icons/tezos.png';
   } else {
     avatar.src = `https://services.tzkt.io/v1/avatars/${encodeURIComponent(entry.realAddress)}`;
@@ -3249,25 +4406,45 @@ async function openInspectorDrawer(entry, side) {
     : `${entry.count} transfers (${inFlows.length} token${inFlows.length > 1 ? 's' : ''})`;
 
   const tzktLink = document.getElementById('drawer-tzkt-link');
-  tzktLink.href = entry.realAddress.startsWith('~')
-    ? `https://tzkt.io/${encodeURIComponent(currentAddress)}`
-    : `https://tzkt.io/${encodeURIComponent(entry.realAddress)}`;
+  const targetExplorerAddr = entry.realAddress.startsWith('~') ? currentAddress : entry.realAddress;
+  tzktLink.href = getExplorerAddressUrl(targetExplorerAddr);
+  tzktLink.innerHTML = `<i class="fa-solid fa-arrow-up-right-from-square"></i> ${
+    isEtherlinkAddress(targetExplorerAddr) ? 'Etherlink Explorer' : 'TzKT Profile'
+  }`;
 
   const txListEl = document.getElementById('drawer-tx-list');
   const combinedRawRefs = entry.hasCircularReturn
     ? Array.from(new Set([...(entry.txHashes || []), ...(entry.returnEntry?.txHashes || [])]))
     : entry.txHashes || [];
 
+  const subBranchesHtml =
+    Array.isArray(entry.subBranches) && entry.subBranches.length > 0
+      ? entry.subBranches
+          .map((b) => {
+            const isL2 = b.network === 'etherlink';
+            return `
+              <button type="button" class="drawer-tx-item drawer-l2-branch-btn" data-branch-addr="${escapeHtml(b.address)}" data-branch-net="${escapeHtml(b.network || 'etherlink')}"
+                      style="width: 100%; border: 1px solid ${isL2 ? 'rgba(16, 185, 129, 0.45)' : 'rgba(129, 140, 248, 0.45)'}; background: ${isL2 ? 'rgba(6, 78, 59, 0.35)' : 'rgba(30, 27, 75, 0.45)'}; cursor: pointer; text-align: left;">
+                <span style="color: ${isL2 ? '#6ee7b7' : '#c7d2fe'}; font-weight: 600;">
+                  ${isL2 ? 'L2 ↗' : 'L1 ↗'} ${escapeHtml(shortenAddress(b.address))} • +${escapeHtml(formatTez(b.amount, true))} (${b.count} tx)
+                </span>
+                <span style="font-size: 0.72rem; color: #34d399; font-weight: 600;">Switch to ${isL2 ? 'L2' : 'L1'} →</span>
+              </button>
+            `;
+          })
+          .join('')
+      : '';
+
   const renderTxItems = (hashes) => {
-    txListEl.innerHTML = hashes
+    const txItemsHtml = hashes
       .map((hash, idx) => {
         const cleanHash = formatTxRefSync(hash);
         const displayHash = cleanHash.startsWith('txid:')
           ? `Tx ID #${cleanHash.slice(5)}`
           : `${cleanHash.slice(0, 14)}…${cleanHash.slice(-8)}`;
         const href = cleanHash.startsWith('txid:')
-          ? `https://tzkt.io/${encodeURIComponent(entry.realAddress)}`
-          : `https://tzkt.io/${encodeURIComponent(cleanHash)}`;
+          ? getExplorerAddressUrl(entry.realAddress)
+          : getExplorerTxUrl(cleanHash, entry.realAddress);
         return `
           <a class="drawer-tx-item" href="${href}" target="_blank" rel="noopener">
             <span>#${idx + 1} • ${escapeHtml(displayHash)}</span>
@@ -3276,6 +4453,21 @@ async function openInspectorDrawer(entry, side) {
         `;
       })
       .join('');
+    txListEl.innerHTML = subBranchesHtml + txItemsHtml;
+
+    txListEl.querySelectorAll('.drawer-l2-branch-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bAddr = btn.dataset.branchAddr;
+        const isL2 = btn.dataset.branchNet === 'etherlink';
+        if (bAddr) {
+          inspectorDrawer?.classList.remove('open');
+          showNotification(`Switched to ${isL2 ? 'Etherlink L2' : 'Tezos L1'} context: ${shortenAddress(bAddr)}`);
+          input.value = bAddr;
+          go();
+        }
+      });
+    });
   };
 
   renderTxItems(combinedRawRefs);
@@ -3326,7 +4518,7 @@ document.getElementById('drawer-copy-btn')?.addEventListener('click', async () =
     ? Array.from(new Set([...(inspectedEntry.txHashes || []), ...(inspectedEntry.returnEntry?.txHashes || [])]))
     : inspectedEntry.txHashes || [];
   const resolved = await resolveTxRefsToHashes(combinedRefs);
-  const txText = resolved.map((h) => `https://tzkt.io/${h}`).join('\n');
+  const txText = resolved.map((h) => getExplorerTxUrl(h, inspectedEntry.realAddress)).join('\n');
   const text = `${inspectedEntry.realAddress}\n\n${txText}`;
   navigator.clipboard.writeText(text).catch(() => {});
   console.log(text);
