@@ -1194,10 +1194,10 @@ resultLimitSlider.addEventListener('input', function () {
         (Boolean(cached.accountInfo?.tokenBalancesFetched) &&
           (isL2
             ? enabledL2.every(
-                (k) =>
-                  cached.fetchedL2Tokens?.has(k) &&
-                  (cached.tokenExhaustedMap?.get(k) || (cached.tokenPagesMap?.get(k) || 0) >= faTargetPages)
-              )
+              (k) =>
+                cached.fetchedL2Tokens?.has(k) &&
+                (cached.tokenExhaustedMap?.get(k) || (cached.tokenPagesMap?.get(k) || 0) >= faTargetPages)
+            )
             : cached.faExhausted || (cached.faLimit || 0) >= limit));
       if (xtzReady && faReady) {
         currentRawData = needXtz
@@ -1391,10 +1391,10 @@ async function onTokenSelectionChanged() {
       !cached.accountInfo?.tokenBalancesFetched ||
       (isL2
         ? enabledL2.some(
-            (k) =>
-              !cached.fetchedL2Tokens?.has(k) ||
-              (!cached.tokenExhaustedMap?.get(k) && (cached.tokenPagesMap?.get(k) || 0) < faTargetPages)
-          )
+          (k) =>
+            !cached.fetchedL2Tokens?.has(k) ||
+            (!cached.tokenExhaustedMap?.get(k) && (cached.tokenPagesMap?.get(k) || 0) < faTargetPages)
+        )
         : !cached.faExhausted && (cached.faLimit || 0) < limit));
 
   if (missingXtz || missingFa) {
@@ -1708,8 +1708,8 @@ async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000
         response.status >= 500
           ? '5xx Server Error'
           : response.status === 429
-          ? '429 Rate Limit'
-          : '4xx Client Error';
+            ? '429 Rate Limit'
+            : '4xx Client Error';
       console.error(`TzKT ${errType} (HTTP ${response.status}) fetching operations batch`);
       return null;
     }
@@ -2002,8 +2002,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
             res.status >= 500
               ? '5xx Server Error'
               : res.status === 429
-              ? '429 Rate Limit'
-              : '4xx Client Error';
+                ? '429 Rate Limit'
+                : '4xx Client Error';
           console.error(`Blockscout ${errType} (HTTP ${res.status}) fetching ${endpointPath}`);
           return { ok: false, status: res.status };
         }
@@ -2472,15 +2472,15 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   const addrPromise = !existing?.accountInfo
     ? blockscoutFetch(`${ETHERLINK_API_BASE}/addresses/${enc}`)
-        .then((r) => {
-          if (r.ok) return r.json();
-          if (r.status !== 404) addrFetchError = true;
-          return {};
-        })
-        .catch(() => {
-          addrFetchError = true;
-          return {};
-        })
+      .then((r) => {
+        if (r.ok) return r.json();
+        if (r.status !== 404) addrFetchError = true;
+        return {};
+      })
+      .catch(() => {
+        addrFetchError = true;
+        return {};
+      })
     : Promise.resolve(null);
 
   const topTxV2Promise =
@@ -2495,15 +2495,15 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   const tokensBalPromise =
     needFa && !existing?.accountInfo?.tokenBalancesFetched
       ? blockscoutFetch(`${ETHERLINK_API_BASE}/addresses/${enc}/tokens?type=ERC-20`)
-          .then((r) => {
-            if (r.ok) return r.json();
-            if (r.status !== 404) tokBalFetchError = true;
-            return null;
-          })
-          .catch(() => {
-            tokBalFetchError = true;
-            return null;
-          })
+        .then((r) => {
+          if (r.ok) return r.json();
+          if (r.status !== 404) tokBalFetchError = true;
+          return null;
+        })
+        .catch(() => {
+          tokBalFetchError = true;
+          return null;
+        })
       : Promise.resolve(null);
 
   const tokenTxPromise = needFaFetch
@@ -2518,14 +2518,14 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   const l1DepositsPromise =
     needXtz && !existing?.l1DepositsChecked
       ? tzktFetch(
-          isFeedAddress || isZeroAddress
-            ? `${TZKT_API_BASE}/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
-            : isWithdrawPrecompile
+        isFeedAddress || isZeroAddress
+          ? `${TZKT_API_BASE}/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
+          : isWithdrawPrecompile
             ? `${TZKT_API_BASE}/operations/transactions?anyof.sender.target=${ETHERLINK_WITHDRAW_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,target,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
             : `${TZKT_API_BASE}/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&parameter.l2_address=${encodeURIComponent(rawHexNoPrefix)}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender&sort.desc=id&limit=200`
-        )
-          .then((r) => (r.ok ? r.json() : []))
-          .catch(() => [])
+      )
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => [])
       : Promise.resolve(null);
 
   const [addrJson, topTxV2Result, intV2Result, tokJson, tokenTxJson, l1DepositsRows] = await Promise.all([
@@ -2620,22 +2620,22 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         (sym === 'usdt' || sym === 'usdt0'
           ? 'usdt_l2'
           : sym === 'usdc' || sym === 'usdc.e'
-          ? 'usdc'
-          : sym === 'wxtz'
-          ? 'wxtz'
-          : sym === 'weth' || sym === 'weth.e'
-          ? 'weth'
-          : sym === 'lbtc'
-          ? 'lbtc'
-          : sym === 'wbtc' || sym === 'wbtc.e'
-          ? 'wbtc'
-          : sym === 'xu3o8'
-          ? 'xu3o8'
-          : sym === 'sogni'
-          ? 'sogni'
-          : sym === 'tzbtc'
-          ? 'tzbtc'
-          : null);
+            ? 'usdc'
+            : sym === 'wxtz'
+              ? 'wxtz'
+              : sym === 'weth' || sym === 'weth.e'
+                ? 'weth'
+                : sym === 'lbtc'
+                  ? 'lbtc'
+                  : sym === 'wbtc' || sym === 'wbtc.e'
+                    ? 'wbtc'
+                    : sym === 'xu3o8'
+                      ? 'xu3o8'
+                      : sym === 'sogni'
+                        ? 'sogni'
+                        : sym === 'tzbtc'
+                          ? 'tzbtc'
+                          : null);
       if (tk && TOKEN_DEFINITIONS[tk]) {
         const dec = Number(item.token?.decimals || TOKEN_DEFINITIONS[tk].decimals || 6);
         const bal = parseFloat(item.value || '0') / Math.pow(10, dec);
@@ -3071,22 +3071,22 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         (sym === 'usdt' || sym === 'usdt0'
           ? 'usdt_l2'
           : sym === 'usdc' || sym === 'usdc.e'
-          ? 'usdc'
-          : sym === 'wxtz'
-          ? 'wxtz'
-          : sym === 'weth' || sym === 'weth.e'
-          ? 'weth'
-          : sym === 'lbtc'
-          ? 'lbtc'
-          : sym === 'wbtc' || sym === 'wbtc.e'
-          ? 'wbtc'
-          : sym === 'xu3o8'
-          ? 'xu3o8'
-          : sym === 'sogni'
-          ? 'sogni'
-          : sym === 'tzbtc'
-          ? 'tzbtc'
-          : null);
+            ? 'usdc'
+            : sym === 'wxtz'
+              ? 'wxtz'
+              : sym === 'weth' || sym === 'weth.e'
+                ? 'weth'
+                : sym === 'lbtc'
+                  ? 'lbtc'
+                  : sym === 'wbtc' || sym === 'wbtc.e'
+                    ? 'wbtc'
+                    : sym === 'xu3o8'
+                      ? 'xu3o8'
+                      : sym === 'sogni'
+                        ? 'sogni'
+                        : sym === 'tzbtc'
+                          ? 'tzbtc'
+                          : null);
       if (!tokenKey || !TOKEN_DEFINITIONS[tokenKey]) return;
 
       const tokenDef = TOKEN_DEFINITIONS[tokenKey];
@@ -3273,7 +3273,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     accountInfo,
     apiError: hadError
       ? lastBlockscoutApiError ||
-        lastTzktApiError || { source: 'Blockscout', status: 0, category: 'network', isNetworkError: true }
+      lastTzktApiError || { source: 'Blockscout', status: 0, category: 'network', isNetworkError: true }
       : null
   };
 }
@@ -3295,8 +3295,8 @@ async function fetchFaTransfersBatch(tezosAddress, lastId = 0, batchLimit = 1000
         response.status >= 500
           ? '5xx Server Error'
           : response.status === 429
-          ? '429 Rate Limit'
-          : '4xx Client Error';
+            ? '429 Rate Limit'
+            : '4xx Client Error';
       console.error(`TzKT ${errType} (HTTP ${response.status}) fetching FA token transfers batch`);
       return null;
     }
@@ -3458,9 +3458,9 @@ async function fetchAllData(tezosAddress, requestedLimit) {
     : existing?.specialOpsFetched
       ? Promise.resolve(existing.specialOps || [])
       : fetchSpecialAccountOps(tezosAddress, accountPromise).then((ops) => {
-          specialOpsFetched = true;
-          return ops;
-        });
+        specialOpsFetched = true;
+        return ops;
+      });
 
   const xtzFetchPromise = (async () => {
     if (!needXtz) return;
@@ -3838,15 +3838,15 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
         (senderAddr === ETHERLINK_BRIDGE_CONTRACT
           ? 'Etherlink Bridge'
           : senderAddr === ETHERLINK_WITHDRAW_CONTRACT
-          ? 'Etherlink Withdraw'
-          : senderAddr);
+            ? 'Etherlink Withdraw'
+            : senderAddr);
       const targetAlias =
         operation.target?.alias ||
         (targetAddr === ETHERLINK_BRIDGE_CONTRACT
           ? 'Etherlink Bridge'
           : targetAddr === ETHERLINK_WITHDRAW_CONTRACT
-          ? 'Etherlink Withdraw'
-          : targetAddr);
+            ? 'Etherlink Withdraw'
+            : targetAddr);
       const timestamp = new Date(operation.timestamp);
 
       if (operation.type === 'activation') {
@@ -3911,9 +3911,9 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
             targetAddr === ETHERLINK_BRIDGE_CONTRACT ? senderAddr : targetAddr;
           const evmBridgeAddr =
             !isRollupInternalParty(l1BridgePeer) &&
-            (targetAddr === ETHERLINK_BRIDGE_CONTRACT ||
-              senderAddr === ETHERLINK_WITHDRAW_CONTRACT ||
-              targetAddr === ETHERLINK_WITHDRAW_CONTRACT)
+              (targetAddr === ETHERLINK_BRIDGE_CONTRACT ||
+                senderAddr === ETHERLINK_WITHDRAW_CONTRACT ||
+                targetAddr === ETHERLINK_WITHDRAW_CONTRACT)
               ? extractEtherlinkEvmAddress(operation.parameter)
               : null;
 
@@ -4393,10 +4393,10 @@ function sortAndGroupFlows(entries, side, totalByTokenMap, totalEquivTez) {
       clonedFlows.length === 1
         ? clonedFlows[0].sharePct
         : totalEquivTez > 0
-        ? (item.equivalentTez / totalEquivTez) * 100
-        : singleTkTotal > 0
-        ? (item.amount / singleTkTotal) * 100
-        : 0;
+          ? (item.equivalentTez / totalEquivTez) * 100
+          : singleTkTotal > 0
+            ? (item.amount / singleTkTotal) * 100
+            : 0;
 
     return {
       ...item,
@@ -4493,8 +4493,8 @@ function sortAndGroupFlows(entries, side, totalByTokenMap, totalEquivTez) {
       aggFlows.length === 1
         ? primaryAggTf.sharePct
         : totalEquivTez > 0
-        ? (restEquivTez / totalEquivTez) * 100
-        : 0,
+          ? (restEquivTez / totalEquivTez) * 100
+          : 0,
     isSpecial: false,
     isBidirectional: false,
     isAggregate: true,
@@ -4708,8 +4708,8 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     leftCol.nodes.reduce((s, n) => s + n.weight, 0) + (selfLoopEntry ? selfLoopEntry.weight : 0) || 1;
   const rightTotalWeight =
     rightCol.nodes.reduce((s, n) => s + n.weight, 0) +
-      circularNodes.reduce((s, n) => s + n.returnWeight, 0) +
-      (selfLoopEntry ? selfLoopEntry.weight : 0) || 1;
+    circularNodes.reduce((s, n) => s + n.returnWeight, 0) +
+    (selfLoopEntry ? selfLoopEntry.weight : 0) || 1;
 
   const leftGap = totalLeftRibbonCount > 40 ? 0.8 : 1.4;
   const rightGap = totalRightRibbonCount > 40 ? 0.8 : 1.4;
@@ -5168,7 +5168,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
           return `
             <g class="sankey-link-wrap" data-side="in" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-token="${escapeHtml(tf.tokenKey)}">
               <path class="sankey-link sankey-ribbon-link" d="${d}" fill="${gradId}" fill-opacity="0.38" stroke="${strokeColor}" stroke-width="0.6" stroke-opacity="0.48" />
-              <path class="sankey-link-flow" d="${centerD}" stroke-width="2" />
+              <path class="sankey-link-flow" d="${centerD}" fill="none" stroke="#ffffff" stroke-opacity="0" stroke-dasharray="6 18" stroke-linecap="round" stroke-width="2" />
             </g>
           `;
         })
@@ -5186,7 +5186,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
           return `
             <g class="sankey-link-wrap sankey-circular-wrap" data-side="in" data-circular="true" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-token="${escapeHtml(rtf.tokenKey)}">
               <path class="sankey-link sankey-circular-link" d="${loopD}" fill="none" stroke="${tokenDef.gradCircular}" stroke-width="${strokeW}" stroke-opacity="0.52" stroke-linecap="butt" />
-              <path class="sankey-link-flow" d="${loopD}" stroke-width="2" />
+              <path class="sankey-link-flow" d="${loopD}" fill="none" stroke="#ffffff" stroke-opacity="0" stroke-dasharray="6 18" stroke-linecap="round" stroke-width="2" />
             </g>
           `;
         })
@@ -5204,7 +5204,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     selfLoopMarkup = `
       <g class="sankey-link-wrap sankey-self-loop-wrap" id="sankey-self-loop" data-side="self" data-circular="true" data-index="-1" data-addr="${escapeHtml(targetAddress)}" data-flow-key="${escapeHtml(targetAddress)}" style="cursor: pointer;">
         <path class="sankey-link sankey-circular-link sankey-self-link" d="${pathD}" fill="none" stroke="url(#grad-self-loop)" stroke-width="${strokeW}" stroke-opacity="0.58" stroke-linecap="butt" />
-        <path class="sankey-link-flow" d="${pathD}" stroke-width="2.2" />
+        <path class="sankey-link-flow" d="${pathD}" fill="none" stroke="#ffffff" stroke-opacity="0" stroke-dasharray="6 18" stroke-linecap="round" stroke-width="2.2" />
         <rect x="${apexX - pillW / 2}" y="${apexY - 11}" width="${pillW}" height="20" rx="10"
               fill="rgba(15, 23, 42, 0.92)" stroke="#38bdf8" stroke-width="1" />
         <text x="${apexX}" y="${apexY + 3}" text-anchor="middle" fill="#e0f2fe" font-family="JetBrains Mono, monospace" font-size="10" font-weight="600">
@@ -5229,7 +5229,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
           return `
             <g class="sankey-link-wrap" data-side="out" data-index="${n.index}" data-addr="${escapeHtml(n.realAddress)}" data-flow-key="${escapeHtml(n.realAddress)}" data-token="${escapeHtml(tf.tokenKey)}">
               <path class="sankey-link sankey-ribbon-link" d="${d}" fill="${tokenDef.gradOutflow}" fill-opacity="0.38" stroke="${tokenDef.outflowColor}" stroke-width="0.6" stroke-opacity="0.48" />
-              <path class="sankey-link-flow" d="${centerD}" stroke-width="2" />
+              <path class="sankey-link-flow" d="${centerD}" fill="none" stroke="#ffffff" stroke-opacity="0" stroke-dasharray="6 18" stroke-linecap="round" stroke-width="2" />
             </g>
           `;
         })
@@ -5269,10 +5269,10 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     const biBadge = n.isSelfTransfer
       ? ' ↺'
       : n.hasCircularReturn
-      ? ' ↺'
-      : n.isBidirectional
-      ? ' ⇄'
-      : '';
+        ? ' ↺'
+        : n.isBidirectional
+          ? ' ⇄'
+          : '';
 
     const tagPlain = showTokenTags
       ? ` [${allNodeTokenKeys.map((tk) => (TOKEN_DEFINITIONS[tk] || TOKEN_DEFINITIONS.xtz).ticker).join('·')}]`
@@ -5282,29 +5282,29 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     const rawBaseTitle = n.alias
       ? n.alias
       : suffixLen >= 10
-      ? compactAddress(n.realAddress)
-      : shortenAddress(n.realAddress);
+        ? compactAddress(n.realAddress)
+        : shortenAddress(n.realAddress);
     const primaryTitle = truncateText(rawBaseTitle, maxTitleChars);
 
     const tokenTagsMarkup = showTokenTags
       ? `<tspan fill="#64748b" font-size="9.2" font-family="JetBrains Mono, monospace"> [</tspan>` +
-        allNodeTokenKeys
-          .map((tk) => {
-            const def = TOKEN_DEFINITIONS[tk] || TOKEN_DEFINITIONS.xtz;
-            return `<tspan fill="${def.badgeText}" font-size="9.2" font-family="JetBrains Mono, monospace">${escapeHtml(def.ticker)}</tspan>`;
-          })
-          .join('<tspan fill="#64748b" font-size="9.2" font-family="JetBrains Mono, monospace">·</tspan>') +
-        `<tspan fill="#64748b" font-size="9.2" font-family="JetBrains Mono, monospace">]</tspan>`
+      allNodeTokenKeys
+        .map((tk) => {
+          const def = TOKEN_DEFINITIONS[tk] || TOKEN_DEFINITIONS.xtz;
+          return `<tspan fill="${def.badgeText}" font-size="9.2" font-family="JetBrains Mono, monospace">${escapeHtml(def.ticker)}</tspan>`;
+        })
+        .join('<tspan fill="#64748b" font-size="9.2" font-family="JetBrains Mono, monospace">·</tspan>') +
+      `<tspan fill="#64748b" font-size="9.2" font-family="JetBrains Mono, monospace">]</tspan>`
       : '';
 
     // Concise subtitle so in/out counts and address never collide with right-side volume labels
     const subTitle = n.isAggregate
       ? `${n.count.toLocaleString()} txes • Tap to expand`
       : n.hasCircularReturn
-      ? `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count.toLocaleString()} in / ${n.returnCount.toLocaleString()} out`
-      : n.realAddress === '~Subsidy (all time)~' && n.count > 100
-      ? `${n.count.toLocaleString()} subsidy blocks`
-      : `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count.toLocaleString()} tx${n.count > 1 ? 'es' : ''}`;
+        ? `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count.toLocaleString()} in / ${n.returnCount.toLocaleString()} out`
+        : n.realAddress === '~Subsidy (all time)~' && n.count > 100
+          ? `${n.count.toLocaleString()} subsidy blocks`
+          : `${n.alias ? compactAddress(n.realAddress) + ' • ' : ''}${n.count.toLocaleString()} tx${n.count > 1 ? 'es' : ''}`;
 
     const portBarX = isLeft ? n.x + n.w - 5 : n.x;
     const inspectBtnX = isLeft ? n.x + 8 : n.x + n.w - 28;
@@ -5330,11 +5330,11 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       portSegments.length === 1 && !n.hasCircularReturn
         ? `<rect x="${portBarX}" y="${n.y + 4}" width="5" height="${n.h - 8}" rx="2.5" fill="${portSegments[0].color}" />`
         : portSegments
-            .map((seg) => {
-              const segH = Math.max(4, seg.y1 - seg.y0);
-              return `<rect x="${portBarX}" y="${seg.y0}" width="5" height="${segH}" rx="2.2" fill="${seg.color}" />`;
-            })
-            .join('');
+          .map((seg) => {
+            const segH = Math.max(4, seg.y1 - seg.y0);
+            return `<rect x="${portBarX}" y="${seg.y0}" width="5" height="${segH}" rx="2.2" fill="${seg.color}" />`;
+          })
+          .join('');
 
     // Build right-aligned amount lines (1 line if single token, or stacked colored lines for multi-token / circular return)
     const metricLines = [];
@@ -5380,12 +5380,12 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       allNodeTokenKeys.length > 1
         ? 'rgba(165, 180, 252, 0.48)'
         : hasFaOnNode
-        ? primaryDef.cardBorder
-        : n.hasCircularReturn
-        ? 'rgba(236, 72, 153, 0.55)'
-        : n.isBidirectional
-        ? 'rgba(129, 140, 248, 0.5)'
-        : 'rgba(255, 255, 255, 0.1)';
+          ? primaryDef.cardBorder
+          : n.hasCircularReturn
+            ? 'rgba(236, 72, 153, 0.55)'
+            : n.isBidirectional
+              ? 'rgba(129, 140, 248, 0.5)'
+              : 'rgba(255, 255, 255, 0.1)';
 
     const branchItemsMarkup = (n.visibleBranches || [])
       .map((b, bIdx) => {
@@ -5467,14 +5467,13 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         ${portStripMarkup}
 
         <!-- Inspect Drawer Trigger Button (⋯) -->
-        ${
-          !n.isAggregate
-            ? `<g class="node-inspect-btn" data-side="${side}" data-index="${n.index}" title="Inspect transactions">
+        ${!n.isAggregate
+        ? `<g class="node-inspect-btn" data-side="${side}" data-index="${n.index}" title="Inspect transactions">
                  <rect x="${inspectBtnX}" y="${midY - 10}" width="20" height="20" rx="5" fill="rgba(255,255,255,0.06)" />
                  <text x="${inspectBtnX + 10}" y="${midY + 4}" text-anchor="middle" fill="#94a3b8" font-family="Inter, sans-serif" font-size="11" font-weight="700">⋯</text>
                </g>`
-            : ''
-        }
+        : ''
+      }
 
         <!-- Primary Label (Alias or Short Address + Multi-Token Tags) -->
         <text class="node-left-text" x="${textLeftX}" y="${midY - 4}" fill="#f8fafc" font-family="Inter, sans-serif" font-size="11.8" font-weight="600">${escapeHtml(primaryTitle)}${tokenTagsMarkup}${escapeHtml(biBadge)}</text>
@@ -5550,18 +5549,16 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
             fill="url(#grad-hub)" stroke="${isL2Hub ? '#34d399' : '#818cf8'}" stroke-width="1.5" />
 
       <!-- Left Inflow Port Rail -->
-      ${
-        totalLeftRibbonCount > 0
-          ? `<rect x="${hubX}" y="${hubCenterY - leftPortSpan / 2}" width="6" height="${leftPortSpan}" rx="3" fill="#10b981" />`
-          : ''
-      }
+      ${totalLeftRibbonCount > 0
+      ? `<rect x="${hubX}" y="${hubCenterY - leftPortSpan / 2}" width="6" height="${leftPortSpan}" rx="3" fill="#10b981" />`
+      : ''
+    }
 
       <!-- Right Outflow Port Rail -->
-      ${
-        totalRightRibbonCount > 0
-          ? `<rect x="${hubX + hubW - 6}" y="${hubCenterY - rightPortSpan / 2}" width="6" height="${rightPortSpan}" rx="3" fill="#f43f5e" />`
-          : ''
-      }
+      ${totalRightRibbonCount > 0
+      ? `<rect x="${hubX + hubW - 6}" y="${hubCenterY - rightPortSpan / 2}" width="6" height="${rightPortSpan}" rx="3" fill="#f43f5e" />`
+      : ''
+    }
 
       <!-- Hub Badge -->
       <rect x="${hubMidX - hubBadgeW / 2}" y="${contentTopY}" width="${hubBadgeW}" height="20" rx="10"
@@ -5577,11 +5574,10 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         <text x="${hubMidX}" y="${avatarCy + 5}" text-anchor="middle" fill="${isL2Hub ? '#6ee7b7' : '#c7d2fe'}" font-family="Space Grotesk, Inter, sans-serif" font-size="14" font-weight="700">
           ${escapeHtml(hubInitial)}
         </text>
-        ${
-          !isL2Hub
-            ? `<image class="hub-avatar-img" href="${escapeHtml(hubAvatarUrl)}" x="${hubMidX - avatarR}" y="${avatarCy - avatarR}" width="${avatarR * 2}" height="${avatarR * 2}" clip-path="url(#hub-avatar-clip)" preserveAspectRatio="xMidYMid slice" />`
-            : ''
-        }
+        ${!isL2Hub
+      ? `<image class="hub-avatar-img" href="${escapeHtml(hubAvatarUrl)}" x="${hubMidX - avatarR}" y="${avatarCy - avatarR}" width="${avatarR * 2}" height="${avatarR * 2}" clip-path="url(#hub-avatar-clip)" preserveAspectRatio="xMidYMid slice" />`
+      : ''
+    }
         <circle class="hub-avatar-ring" cx="${hubMidX}" cy="${avatarCy}" r="${avatarR + 0.5}" fill="none" stroke="${isL2Hub ? '#34d399' : '#818cf8'}" stroke-width="1.5" />
       </a>
 
@@ -5639,7 +5635,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
       }
     }
     if (sampleRefs.length > 0) {
-      resolveTxRefsToHashes(sampleRefs).catch(() => {});
+      resolveTxRefsToHashes(sampleRefs).catch(() => { });
     }
   }
 
@@ -5881,26 +5877,26 @@ function bindSankeyInteractions(
     const badgeClass = entry.isSelfTransfer
       ? 'hub'
       : hoveredToken && hoveredToken !== 'xtz'
-      ? hoveredToken
-      : inFlows.length === 1 && inFlows[0].tokenKey !== 'xtz'
-      ? inFlows[0].tokenKey
-      : isLeft
-      ? 'inflow'
-      : 'outflow';
+        ? hoveredToken
+        : inFlows.length === 1 && inFlows[0].tokenKey !== 'xtz'
+          ? inFlows[0].tokenKey
+          : isLeft
+            ? 'inflow'
+            : 'outflow';
 
     const badgeText = entry.isSpecial
       ? 'Protocol Flow'
       : entry.isSelfTransfer
-      ? 'Self-Transfer (↺)'
-      : entry.hasCircularReturn
-      ? `Circular Flow ↺ (${inFlows.length + retFlows.length} ribbons)`
-      : isLeft
-      ? entry.isBidirectional
-        ? 'Inflow • Bidirectional ⇄'
-        : `Inflow (${inFlows.length > 1 ? inFlows.length + ' Tokens' : 'Sender'})`
-      : entry.isBidirectional
-      ? 'Outflow • Bidirectional ⇄'
-      : `Outflow (${inFlows.length > 1 ? inFlows.length + ' Tokens' : 'Receiver'})`;
+        ? 'Self-Transfer (↺)'
+        : entry.hasCircularReturn
+          ? `Circular Flow ↺ (${inFlows.length + retFlows.length} ribbons)`
+          : isLeft
+            ? entry.isBidirectional
+              ? 'Inflow • Bidirectional ⇄'
+              : `Inflow (${inFlows.length > 1 ? inFlows.length + ' Tokens' : 'Sender'})`
+            : entry.isBidirectional
+              ? 'Outflow • Bidirectional ⇄'
+              : `Outflow (${inFlows.length > 1 ? inFlows.length + ' Tokens' : 'Receiver'})`;
 
     const startStr = formatDateShort(entry.dateRange?.start);
     const endStr = formatDateShort(entry.dateRange?.end);
@@ -5965,24 +5961,22 @@ function bindSankeyInteractions(
       <div class="tt-header">
         <div class="tt-title-wrap">
           <div class="tt-alias">${escapeHtml(entry.alias || shortenAddress(entry.realAddress))}</div>
-          ${
-            !entry.isAggregate
-              ? `<div class="tt-address">${escapeHtml(entry.realAddress)}</div>`
-              : `<div class="tt-address">Grouped smaller counterparties</div>`
-          }
+          ${!entry.isAggregate
+        ? `<div class="tt-address">${escapeHtml(entry.realAddress)}</div>`
+        : `<div class="tt-address">Grouped smaller counterparties</div>`
+      }
         </div>
         <span class="tt-badge ${escapeHtml(badgeClass)}">${escapeHtml(badgeText)}</span>
       </div>
       ${rowsHtml.join('')}
       <div class="tt-footer">
         <span><i class="fa-regular fa-calendar"></i> ${escapeHtml(dateSpan)}</span>
-        <span>${
-          entry.isAggregate
-            ? 'Click to expand all'
-            : entry.isSelfTransfer
-            ? 'Click: Copy &amp; Inspect Self-Txes'
-            : 'Click: Copy &amp; Pivot • ⋯: Tx List'
-        }</span>
+        <span>${entry.isAggregate
+        ? 'Click to expand all'
+        : entry.isSelfTransfer
+          ? 'Click: Copy &amp; Inspect Self-Txes'
+          : 'Click: Copy &amp; Pivot • ⋯: Tx List'
+      }</span>
       </div>
     `;
     tooltip.style.display = 'block';
@@ -6248,7 +6242,7 @@ function bindSankeyInteractions(
       if (branchAddr) {
         const txLinks = (branch?.txHashes || []).map((h) => getExplorerTxUrl(h, entry?.realAddress || branchAddr)).join('\n');
         const clipText = txLinks ? `${branchAddr}\n\n${txLinks}` : branchAddr;
-        navigator.clipboard.writeText(clipText).catch(() => {});
+        navigator.clipboard.writeText(clipText).catch(() => { });
         console.log(clipText);
         const isL2 = (branch?.network || branchEl.dataset.branchNet) === 'etherlink';
         showNotification(`Switched to ${isL2 ? 'Etherlink L2' : 'Tezos L1'} context: ${shortenAddress(branchAddr)}`);
@@ -6278,7 +6272,7 @@ function bindSankeyInteractions(
     if (!itemEl) return;
 
     if (itemEl.id === 'sankey-center-hub') {
-      navigator.clipboard.writeText(targetAddress).catch(() => {});
+      navigator.clipboard.writeText(targetAddress).catch(() => { });
       console.log(targetAddress);
       showNotification(`Copied target address: ${shortenAddress(targetAddress)}`);
       return;
@@ -6331,10 +6325,10 @@ async function openInspectorDrawer(entry, side) {
   badge.textContent = entry.isSelfTransfer
     ? `${tickersText} • Self-Transfer (Hub ↺ Hub)`
     : entry.hasCircularReturn
-    ? `${tickersText} • Circular Flow (In & Returned ↺)`
-    : side === 'in'
-    ? `${tickersText} • Inflow (Sender)`
-    : `${tickersText} • Outflow (Receiver)`;
+      ? `${tickersText} • Circular Flow (In & Returned ↺)`
+      : side === 'in'
+        ? `${tickersText} • Inflow (Sender)`
+        : `${tickersText} • Outflow (Receiver)`;
 
   const avatar = document.getElementById('drawer-avatar');
   if (entry.realAddress.startsWith('~') || isEtherlinkAddress(entry.realAddress)) {
@@ -6355,9 +6349,8 @@ async function openInspectorDrawer(entry, side) {
   const tzktLink = document.getElementById('drawer-tzkt-link');
   const targetExplorerAddr = entry.realAddress.startsWith('~') ? currentAddress : entry.realAddress;
   tzktLink.href = getExplorerAddressUrl(targetExplorerAddr);
-  tzktLink.innerHTML = `<i class="fa-solid fa-arrow-up-right-from-square"></i> ${
-    isEtherlinkAddress(targetExplorerAddr) ? 'Etherlink Explorer' : 'TzKT Profile'
-  }`;
+  tzktLink.innerHTML = `<i class="fa-solid fa-arrow-up-right-from-square"></i> ${isEtherlinkAddress(targetExplorerAddr) ? 'Etherlink Explorer' : 'TzKT Profile'
+    }`;
 
   const txListEl = document.getElementById('drawer-tx-list');
   const combinedRawRefs = entry.hasCircularReturn
@@ -6378,9 +6371,9 @@ async function openInspectorDrawer(entry, side) {
   const subBranchesHtml =
     Array.isArray(entry.subBranches) && entry.subBranches.length > 0
       ? entry.subBranches
-          .map((b) => {
-            const isL2 = b.network === 'etherlink';
-            return `
+        .map((b) => {
+          const isL2 = b.network === 'etherlink';
+          return `
               <button type="button" class="drawer-tx-item drawer-l2-branch-btn" data-branch-addr="${escapeHtml(b.address)}" data-branch-net="${escapeHtml(b.network || 'etherlink')}"
                       style="width: 100%; border: 1px solid ${isL2 ? 'rgba(16, 185, 129, 0.45)' : 'rgba(129, 140, 248, 0.45)'}; background: ${isL2 ? 'rgba(6, 78, 59, 0.35)' : 'rgba(30, 27, 75, 0.45)'}; cursor: pointer; text-align: left;">
                 <span style="color: ${isL2 ? '#6ee7b7' : '#c7d2fe'}; font-weight: 600;">
@@ -6389,8 +6382,8 @@ async function openInspectorDrawer(entry, side) {
                 <span style="font-size: 0.72rem; color: #34d399; font-weight: 600;">Switch to ${isL2 ? 'L2' : 'L1'} →</span>
               </button>
             `;
-          })
-          .join('')
+        })
+        .join('')
       : '';
 
   const renderTxItems = (hashes) => {
@@ -6478,7 +6471,7 @@ document.getElementById('drawer-copy-btn')?.addEventListener('click', async () =
   const resolved = await resolveTxRefsToHashes(combinedRefs);
   const txText = resolved.map((h) => getExplorerTxUrl(h, inspectedEntry.realAddress)).join('\n');
   const text = `${inspectedEntry.realAddress}\n\n${txText}`;
-  navigator.clipboard.writeText(text).catch(() => {});
+  navigator.clipboard.writeText(text).catch(() => { });
   console.log(text);
   showNotification('Address and transactions copied to clipboard/console');
 });
@@ -6499,11 +6492,46 @@ function exportDiagramAsPng() {
 
   const clone = svgEl.cloneNode(true);
   clone.querySelectorAll('.hub-avatar-img').forEach((el) => el.remove());
+
+  // Strip inactive animated centerline overlays so standalone SVG rasterization
+  // never renders default black fills over curved ribbon flows
+  clone.querySelectorAll('.sankey-link-flow:not(.active)').forEach((el) => el.remove());
+  clone.querySelectorAll('.sankey-link-flow.active').forEach((el) => {
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke', '#ffffff');
+    el.setAttribute('stroke-opacity', '0.65');
+    el.setAttribute('stroke-dasharray', '6 18');
+    el.setAttribute('stroke-linecap', 'round');
+  });
+
+  // Embed external stylesheet rules for standalone SVG -> Canvas rendering
+  const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  styleEl.textContent = `
+    .sankey-ribbon-link { fill-opacity: 0.36; stroke-width: 0.6px; stroke-opacity: 0.45; }
+    .sankey-circular-link { fill: none; stroke-opacity: 0.46; stroke-linecap: butt; }
+    .sankey-self-link { fill: none; stroke-opacity: 0.58; }
+    .sankey-ribbon-link.highlighted { fill-opacity: 0.78; stroke-opacity: 0.92; }
+    .sankey-circular-link.highlighted { stroke-opacity: 0.92; }
+    .sankey-svg.has-highlight .sankey-ribbon-link:not(.highlighted) { fill-opacity: 0.12; stroke-opacity: 0.18; }
+    .sankey-svg.has-highlight .sankey-circular-link:not(.highlighted) { stroke-opacity: 0.16; }
+    .sankey-link-flow { fill: none; stroke: #ffffff; stroke-opacity: 0; stroke-dasharray: 6 18; stroke-linecap: round; }
+    .sankey-link-flow.active { fill: none; stroke: #ffffff; stroke-opacity: 0.65; }
+    .sankey-svg.has-highlight .sankey-node-group:not(.highlighted) { opacity: 0.32; }
+    .sankey-node-group.highlighted .sankey-node-card { stroke-width: 1.6px; }
+    .node-inspect-btn rect { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.08); stroke-width: 1px; }
+    .node-inspect-btn text { fill: #94a3b8; }
+    .sankey-svg.has-highlight .sankey-node-group:not(.highlighted) .sankey-l2-branch:not(.highlighted) { opacity: 0.25; }
+    .sankey-l2-branch.highlighted .l2-branch-pill { fill: rgba(16, 185, 129, 0.22); stroke: #34d399; stroke-width: 1.5px; }
+    .sankey-l2-branch[data-branch-net="tezos"].highlighted .l2-branch-pill { fill: rgba(99, 102, 241, 0.25); stroke: #818cf8; stroke-width: 1.5px; }
+    .sankey-l2-branch.highlighted .l2-branch-line { stroke-opacity: 1; stroke-width: 2px; }
+  `;
+
   const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
   bgRect.setAttribute('width', String(width));
   bgRect.setAttribute('height', String(height));
-  bgRect.setAttribute('fill', '#070918');
+  bgRect.setAttribute('fill', '#0b0e20');
   clone.insertBefore(bgRect, clone.firstChild);
+  clone.insertBefore(styleEl, clone.firstChild);
 
   const serializer = new XMLSerializer();
   const svgStr = serializer.serializeToString(clone);
