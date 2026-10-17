@@ -4,9 +4,9 @@
 // ============================================================================
 
 // TzKT L1 Indexer & Rate-Limit Constants
-const TZKT_INDEXER = 'https://kukai.api.tzkt.io';
+const TZKT_INDEXER = 'https://api.tzkt.io';
 const TZKT_API_BASE = `${TZKT_INDEXER.replace(/\/+(v1\/?)?$/, '')}/v1`;
-const TZKT_FALLBACK_API_BASE = 'https://staging.kukai.api.tzkt.io/v1';
+const TZKT_FALLBACK_API_BASE = 'https://kukai.api.tzkt.io/v1';
 const TZKT_EXPLORER_BASE = 'https://tzkt.io';
 const TZKT_AVATARS_BASE = 'https://services.tzkt.io/v1/avatars';
 const TZKT_MAX_REQUESTS_PER_SECOND = 6;
