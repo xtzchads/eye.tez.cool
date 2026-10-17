@@ -667,6 +667,18 @@ const ETHERLINK_LBTC_BRIDGE_OFFRAMP = '0xcec185eb182c47d1ba1efc84e6959e18cd620be
 const ETHERLINK_LBTC_BRIDGE_ROUTER = '0x1912c3cfafe8a76a32a92861d815ac2837f237ca';
 const ETHERLINK_LBTC_TOKEN_POOL = '0x0ad276a2b14eb450897acd100fe530e88d656f02';
 
+// KyberSwap MetaAggregationRouterV2 & AggregationExecutor Helper Contracts on Etherlink L2
+const ETHERLINK_KYBERSWAP_ROUTER = '0x6131b5fae19ea4f9d964eac0408e4408b66337b5';
+const ETHERLINK_KYBERSWAP_EXECUTOR_1 = '0x8f10b468b06c6fd214b65f87778827f7d113f996';
+const ETHERLINK_KYBERSWAP_EXECUTOR_2 = '0x6e4141d33021b52c91c28608403db4a0ffb50ec6';
+const ETHERLINK_KYBERSWAP_EXECUTOR_3 = '0x63242a4ea82847b20e506b63b0e2e2eff0cc6cb0';
+const ETHERLINK_KYBERSWAP_EXECUTORS = [
+  ETHERLINK_KYBERSWAP_EXECUTOR_1,
+  ETHERLINK_KYBERSWAP_EXECUTOR_2,
+  ETHERLINK_KYBERSWAP_EXECUTOR_3
+];
+const ETHERLINK_KYBERSWAP_EXECUTOR_SET = new Set(ETHERLINK_KYBERSWAP_EXECUTORS);
+
 const ETHERLINK_BRIDGED_TOKEN_KEYS = new Set(['usdc', 'usdt_l2', 'weth', 'lbtc', 'wbtc']);
 const ETHERLINK_LZ_BRIDGE_METHODS = new Set([
   'bridge',
@@ -675,6 +687,9 @@ const ETHERLINK_LZ_BRIDGE_METHODS = new Set([
   'lzreceive',
   'sendfrom',
   'send',
+  '0xc7c7f5b3',
+  '0xcfc32570',
+  'execute302',
   '0x879762e2',
   'ccipsend',
   '0x3b81ab9b',
@@ -1822,6 +1837,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     [ETHERLINK_LBTC_BRIDGE_OFFRAMP, 'LayerZero / Lombard Bridge OffRamp'],
     [ETHERLINK_LBTC_BRIDGE_ROUTER, 'LayerZero / Lombard Bridge Router'],
     [ETHERLINK_LBTC_TOKEN_POOL, 'Lombard LBTC Bridge Pool'],
+    [ETHERLINK_KYBERSWAP_ROUTER, 'KyberSwap MetaAggregationRouterV2'],
+    [ETHERLINK_KYBERSWAP_EXECUTOR_1, 'KyberSwap AggregationExecutor'],
+    [ETHERLINK_KYBERSWAP_EXECUTOR_2, 'KyberSwap AggregationExecutor'],
+    [ETHERLINK_KYBERSWAP_EXECUTOR_3, 'KyberSwap AggregationExecutor'],
     [ETHERLINK_WXTZ_CONTRACT, 'Wrapped XTZ (WXTZ)'],
     [ETHERLINK_USDC_CONTRACT, 'LayerZero Bridged USDC'],
     [ETHERLINK_USDT_CONTRACT, 'Tether USD (USDT)'],
@@ -1848,6 +1867,12 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   function makeParty(rawAddr, fallbackName = '') {
     const addr = String(rawAddr || '').toLowerCase();
     if (!addr) return { address: '', alias: '' };
+    if (ETHERLINK_KYBERSWAP_EXECUTOR_SET.has(addr) && !ETHERLINK_KYBERSWAP_EXECUTOR_SET.has(evmAddress)) {
+      return {
+        address: ETHERLINK_KYBERSWAP_ROUTER,
+        alias: 'KyberSwap MetaAggregationRouterV2'
+      };
+    }
     return {
       address: addr,
       alias: aliasLookup.get(addr) || fallbackName || ''
@@ -2132,6 +2157,31 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   }
 
   async function fetchV2InternalPaginated(encodedAddr, targetPages = 5) {
+    if (evmAddress === ETHERLINK_KYBERSWAP_ROUTER) {
+      const [routerInt, execInt] = await Promise.all([
+        fetchV2PaginatedParallel(`/addresses/${encodedAddr}/internal-transactions`, targetPages, {
+          kind: 'internal',
+          priorItems: Array.isArray(existing?.rawIntItems) ? existing.rawIntItems : [],
+          priorPages: existing?.intPagesFetched || 0,
+          priorExhausted: Boolean(existing?.intExhausted),
+          priorNextQs: existing?.intNextQs || null,
+          priorNextParams: existing?.intNextParams || null,
+          priorMaxBlock: existing?.intLastMaxBlock || 0,
+          priorSegments: existing?.intPrefetchedSegments || []
+        }),
+        fetchV2PaginatedParallel(
+          `/addresses/${ETHERLINK_KYBERSWAP_EXECUTOR_1}/internal-transactions`,
+          Math.min(4, targetPages),
+          { kind: 'internal' }
+        )
+      ]);
+      return {
+        ...routerInt,
+        items: [...(routerInt.items || []), ...(execInt.items || [])],
+        hadError: Boolean(routerInt.hadError || execInt.hadError)
+      };
+    }
+
     return fetchV2PaginatedParallel(`/addresses/${encodedAddr}/internal-transactions`, targetPages, {
       kind: 'internal',
       priorItems: Array.isArray(existing?.rawIntItems) ? existing.rawIntItems : [],
@@ -2223,7 +2273,8 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         ETHERLINK_USDT_CONTRACT,
         ETHERLINK_WETH_CONTRACT,
         ETHERLINK_LBTC_CONTRACT,
-        ETHERLINK_WBTC_CONTRACT
+        ETHERLINK_WBTC_CONTRACT,
+        ETHERLINK_WXTZ_CONTRACT
       ];
       let lzError = false;
       const [directRes, lbtcPoolRes, mintBurnRes] = await Promise.all([
@@ -2267,6 +2318,37 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           ...mintBurnRes.items
         ],
         exhausted: !hadErr,
+        hadError: hadErr
+      };
+    }
+
+    // 2b. Special case: KyberSwap MetaAggregationRouterV2 (hydrate router + its 3 AggregationExecutor helper contracts)
+    if (evmAddress === ETHERLINK_KYBERSWAP_ROUTER) {
+      const routerAndExecutors = [ETHERLINK_KYBERSWAP_ROUTER, ...ETHERLINK_KYBERSWAP_EXECUTORS];
+      const pagesPerExec = Math.min(4, Math.max(2, Math.ceil(maxPagesPerToken / 2)));
+      const execResults = await Promise.all(
+        routerAndExecutors.map((addr, idx) =>
+          fetchV2PaginatedParallel(
+            `/addresses/${addr}/token-transfers`,
+            idx === 0 ? 1 : pagesPerExec,
+            {
+              kind: 'token',
+              extraParams: { type: 'ERC-20' }
+            }
+          )
+        )
+      );
+      const hadErr = execResults.some((r) => r.hadError);
+      if (!hadErr) {
+        L2_ERC20_TOKEN_KEYS.forEach((k) => {
+          fetchedL2Tokens.add(k);
+          tokenPagesMap.set(k, maxPagesPerToken);
+          tokenExhaustedMap.set(k, execResults.every((r) => r.exhausted));
+        });
+      }
+      return {
+        items: execResults.flatMap((r) => r.items || []),
+        exhausted: !hadErr && execResults.every((r) => r.exhausted),
         hadError: hadErr
       };
     }
@@ -2403,12 +2485,13 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   const rawHexNoPrefix = evmAddress.replace(/^0x/i, '');
   const isFeedAddress = evmAddress === ETHERLINK_L2_FEED_ADDRESS;
+  const isZeroAddress = evmAddress === ETHERLINK_ZERO_ADDRESS;
   const isWithdrawPrecompile = evmAddress === ETHERLINK_L2_WITHDRAW_PRECOMPILE;
 
   const l1DepositsPromise =
     needXtz && !existing?.l1DepositsChecked
       ? tzktFetch(
-          isFeedAddress
+          isFeedAddress || isZeroAddress
             ? `${TZKT_API_BASE}/operations/transactions?target=${ETHERLINK_BRIDGE_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
             : isWithdrawPrecompile
             ? `${TZKT_API_BASE}/operations/transactions?anyof.sender.target=${ETHERLINK_WITHDRAW_CONTRACT}&status=applied&amount.gt=0&select=id,hash,timestamp,amount,sender,target,parameter&sort.desc=id&limit=${Math.min(2000, Math.max(500, numLimit))}`
@@ -2427,7 +2510,13 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     l1DepositsPromise
   ]);
 
-  if (Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0 && !isFeedAddress && !isWithdrawPrecompile) {
+  if (
+    Array.isArray(l1DepositsRows) &&
+    l1DepositsRows.length > 0 &&
+    !isFeedAddress &&
+    !isZeroAddress &&
+    !isWithdrawPrecompile
+  ) {
     let depMap = l2ToL1DepositorsMap.get(evmAddress);
     if (!depMap) {
       depMap = new Map();
@@ -2545,11 +2634,17 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   let topExhausted = Boolean(existing?.topExhausted);
   let intExhausted = Boolean(existing?.intExhausted);
   if (needXtzFetch) {
-    txData = (isFeedAddress || isWithdrawPrecompile) && existing?.txData ? [...existing.txData] : [];
+    txData =
+      (isFeedAddress || isZeroAddress || isWithdrawPrecompile) && existing?.txData
+        ? [...existing.txData]
+        : [];
     const seenKeys = new Set(txData.map((op) => op._dedupKey || op.hash));
 
-    // If viewing 0x0000...feed directly, hydrate both L1 bridge inflows (from KT1Wj8...) and L2 outflows (to 0x... recipients)
-    if (isFeedAddress && Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0) {
+    // If viewing 0x0000...feed or 0x0000...0000 directly, hydrate L1 bridge inflows (from KT1Wj8...) and (for 0x0000...feed) L2 outflows
+    if ((isFeedAddress || isZeroAddress) && Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0) {
+      const hubTargetParty = isFeedAddress
+        ? { address: ETHERLINK_L2_FEED_ADDRESS, alias: 'Etherlink L1 Deposit' }
+        : { address: ETHERLINK_ZERO_ADDRESS, alias: 'Zero / Mint & Burn Address (0x0)' };
       l1DepositsRows.forEach((op) => {
         const rawAmt = Number(op.amount || 0);
         if (!rawAmt || rawAmt <= 0) return;
@@ -2558,7 +2653,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         const l2TargetAddr = extractEtherlinkEvmAddress(op.parameter);
 
         if (l1SenderAddr && !isRollupInternalParty(l1SenderAddr)) {
-          const inKey = `${op.hash}:l1-in:${l1SenderAddr}:${ETHERLINK_L2_FEED_ADDRESS}`;
+          const inKey = `${op.hash}:l1-in:${l1SenderAddr}:${hubTargetParty.address}`;
           if (!seenKeys.has(inKey)) {
             seenKeys.add(inKey);
             txData.push({
@@ -2568,13 +2663,13 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
               timestamp: op.timestamp,
               amount: rawAmt,
               sender: { address: ETHERLINK_BRIDGE_CONTRACT, alias: 'Etherlink Bridge' },
-              target: { address: ETHERLINK_L2_FEED_ADDRESS, alias: 'Etherlink L1 Deposit' },
+              target: hubTargetParty,
               l1SubBranch: { address: l1SenderAddr, alias: l1SenderAlias }
             });
           }
         }
 
-        if (l2TargetAddr) {
+        if (isFeedAddress && l2TargetAddr) {
           const outKey = `${op.hash}:l2-out:${ETHERLINK_L2_FEED_ADDRESS}:${l2TargetAddr}`;
           if (!seenKeys.has(outKey)) {
             seenKeys.add(outKey);
@@ -2645,16 +2740,29 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
     if (Array.isArray(topTxV2Result?.items)) {
       topTxV2Result.items.forEach((tx) => {
-        const blk = Number(tx.block_number || 0);
-        if (blk > 0 && blk < minTopBlock) minTopBlock = blk;
-
         const isOk = tx.status === 'ok' || tx.result === 'success';
         const rawVal = parseFloat(tx.value || '0');
         if (!isOk || !rawVal || rawVal <= 0) return;
 
+        const blk = Number(tx.block_number || 0);
+        if (blk > 0 && blk < minTopBlock) minTopBlock = blk;
+
         const sender = makeParty(tx.from?.hash, tx.from?.name);
-        const target = makeParty(tx.to?.hash, tx.to?.name);
+        let target = makeParty(tx.to?.hash, tx.to?.name);
         if (!sender.address || !target.address) return;
+        if (evmAddress === ETHERLINK_KYBERSWAP_ROUTER && sender.address === target.address) return;
+
+        // Route native XTZ LayerZero messaging fee payments on WXTZ.send() / OFT send (0xc7c7f5b3) to LayerZero Bridge
+        const txMethodLower = String(tx.method || '').toLowerCase();
+        const txSelector = String(tx.raw_input || '').slice(0, 10).toLowerCase();
+        if (
+          evmAddress !== ETHERLINK_WXTZ_CONTRACT &&
+          evmAddress !== ETHERLINK_LZ_BRIDGE_CONTRACT &&
+          (txSelector === '0xc7c7f5b3' ||
+            (target.address === ETHERLINK_WXTZ_CONTRACT && ETHERLINK_LZ_BRIDGE_METHODS.has(txMethodLower)))
+        ) {
+          target = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
+        }
 
         const dedupKey = `${tx.hash}:${sender.address}:${target.address}`;
         if (seenKeys.has(dedupKey)) return;
@@ -2702,14 +2810,16 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     if (Array.isArray(intV2Result?.items)) {
       intExhausted = Boolean(intV2Result.exhausted);
       intV2Result.items.forEach((itx) => {
+        const rawVal = parseFloat(itx.value || '0');
+        if (!itx.success || !rawVal || rawVal <= 0) return;
+
         const blk = Number(itx.block_number || 0);
         if (blk > 0 && blk < minIntBlock) minIntBlock = blk;
 
-        const rawVal = parseFloat(itx.value || '0');
-        if (!itx.success || !rawVal || rawVal <= 0) return;
         const sender = makeParty(itx.from?.hash, itx.from?.name);
         const target = makeParty(itx.to?.hash, itx.to?.name);
         if (!sender.address || !target.address) return;
+        if (evmAddress === ETHERLINK_KYBERSWAP_ROUTER && sender.address === target.address) return;
         if (
           sender.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE &&
           seenKeys.has(`${itx.transaction_hash}:${ETHERLINK_L2_FEED_ADDRESS}:${target.address}`)
@@ -2735,7 +2845,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
     // Align the block window if either top-level or internal transactions were truncated at the fetch limit
     let cutoffBlock = 0;
-    if (!isFeedAddress && !isWithdrawPrecompile && (!topExhausted || !intExhausted)) {
+    if (!isFeedAddress && !isZeroAddress && !isWithdrawPrecompile && (!topExhausted || !intExhausted)) {
       cutoffBlock = Math.max(
         !topExhausted && Number.isFinite(minTopBlock) ? minTopBlock : 0,
         !intExhausted && Number.isFinite(minIntBlock) ? minIntBlock : 0
@@ -2932,6 +3042,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           rawToHash === ETHERLINK_LZ_ULN_CONTRACT)
       ) {
         toParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
+      }
+
+      if (evmAddress === ETHERLINK_KYBERSWAP_ROUTER && fromParty.address === toParty.address) {
+        return;
       }
 
       const dec = Number(tr.total?.decimals || tr.token?.decimals || tokenDef.decimals || 6);
@@ -3440,6 +3554,10 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
   addressToAliasMap.set(ETHERLINK_L2_WITHDRAW_PRECOMPILE, 'Etherlink L1 Withdraw');
   addressToAliasMap.set(ETHERLINK_LZ_BRIDGE_CONTRACT, 'LayerZero Bridge');
   addressToAliasMap.set(ETHERLINK_LZ_ULN_CONTRACT, 'LayerZero UltraLightNodeV2');
+  addressToAliasMap.set(ETHERLINK_KYBERSWAP_ROUTER, 'KyberSwap MetaAggregationRouterV2');
+  addressToAliasMap.set(ETHERLINK_KYBERSWAP_EXECUTOR_1, 'KyberSwap AggregationExecutor');
+  addressToAliasMap.set(ETHERLINK_KYBERSWAP_EXECUTOR_2, 'KyberSwap AggregationExecutor');
+  addressToAliasMap.set(ETHERLINK_KYBERSWAP_EXECUTOR_3, 'KyberSwap AggregationExecutor');
   addressToAliasMap.set(ETHERLINK_WXTZ_CONTRACT, 'Wrapped XTZ (WXTZ)');
   addressToAliasMap.set(ETHERLINK_USDC_CONTRACT, 'LayerZero Bridged USDC');
   addressToAliasMap.set(ETHERLINK_USDT_CONTRACT, 'Tether USD (USDT)');
@@ -3709,22 +3827,31 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
       }
     });
 
-    // If viewing an Etherlink L2 address that has known L1 depositors via the feed, attach L1 branches
-    if (isEtherlinkAddress(normTargetAddr) && inflowsMap.has(ETHERLINK_L2_FEED_ADDRESS)) {
+    // If viewing an Etherlink L2 address that has known L1 depositors via the feed or 0x0 kernel mint, attach L1 branches
+    if (
+      isEtherlinkAddress(normTargetAddr) &&
+      (inflowsMap.has(ETHERLINK_L2_FEED_ADDRESS) || inflowsMap.has(ETHERLINK_ZERO_ADDRESS))
+    ) {
       const knownL1Map = l2ToL1DepositorsMap.get(normTargetAddr);
       if (knownL1Map) {
-        const feedEntry = inflowsMap.get(ETHERLINK_L2_FEED_ADDRESS);
-        knownL1Map.forEach((rec) => {
-          feedEntry.subBranchesMap.set(rec.address, {
-            address: rec.address,
-            alias: rec.alias,
-            network: 'tezos',
-            amount: rec.amount,
-            count: rec.count,
-            txHashes: [...rec.txHashes],
-            txHashSet: new Set(rec.txHashes)
+        const feedEntry =
+          inflowsMap.get(ETHERLINK_L2_FEED_ADDRESS) ||
+          (inflowsMap.get(ETHERLINK_ZERO_ADDRESS)?.tokenMap?.has('xtz')
+            ? inflowsMap.get(ETHERLINK_ZERO_ADDRESS)
+            : null);
+        if (feedEntry) {
+          knownL1Map.forEach((rec) => {
+            feedEntry.subBranchesMap.set(rec.address, {
+              address: rec.address,
+              alias: rec.alias,
+              network: 'tezos',
+              amount: rec.amount,
+              count: rec.count,
+              txHashes: [...rec.txHashes],
+              txHashSet: new Set(rec.txHashes)
+            });
           });
-        });
+        }
       }
     }
   }
