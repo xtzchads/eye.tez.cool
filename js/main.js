@@ -67,7 +67,7 @@ const TOKEN_DEFINITIONS = {
     key: 'usdt',
     symbol: 'USDt',
     ticker: 'USDt',
-    name: 'Tether USD (USDt)',
+    name: 'Tether USD (Tezos FA2)',
     contract: 'KT1XnTn74bUtxHfDtBmm2bGZAQfhPbvKWR8o',
     tokenId: '0',
     decimals: 6,
@@ -86,24 +86,253 @@ const TOKEN_DEFINITIONS = {
     gradInflow: 'url(#grad-inflow-usdt)',
     gradOutflow: 'url(#grad-outflow-usdt)',
     gradCircular: 'url(#grad-circular-usdt)'
+  },
+  usdt_l2: {
+    key: 'usdt_l2',
+    symbol: 'USDT',
+    ticker: 'USDT',
+    name: 'Tether USD (Etherlink USDT)',
+    contract: '0x2c03058c8afc06713be23e58d2febc8337dbfe6a',
+    l2Contract: '0x2c03058c8afc06713be23e58d2febc8337dbfe6a',
+    tokenId: '0',
+    decimals: 6,
+    isNative: false,
+    tezEquivalentRate: 1.25,
+    inflowColor: '#06b6d4',
+    inflowLight: '#22d3ee',
+    outflowColor: '#06b6d4',
+    outflowLight: '#38bdf8',
+    returnColor: '#0ea5e9',
+    returnTextColor: '#67e8f9',
+    cardBorder: 'rgba(34, 211, 238, 0.42)',
+    badgeBg: 'rgba(6, 182, 212, 0.2)',
+    badgeStroke: 'rgba(34, 211, 238, 0.55)',
+    badgeText: '#22d3ee',
+    gradInflow: 'url(#grad-inflow-usdt)',
+    gradOutflow: 'url(#grad-outflow-usdt)',
+    gradCircular: 'url(#grad-circular-usdt)'
+  },
+  usdc: {
+    key: 'usdc',
+    symbol: 'USDC',
+    ticker: 'USDC',
+    name: 'LayerZero Bridged USDC',
+    contract: '0x796ea11fa2dd751ed01b53c372ffdb4aaa8f00f9',
+    l2Contract: '0x796ea11fa2dd751ed01b53c372ffdb4aaa8f00f9',
+    tokenId: '0',
+    decimals: 6,
+    isNative: false,
+    tezEquivalentRate: 1.25,
+    inflowColor: '#3b82f6',
+    inflowLight: '#60a5fa',
+    outflowColor: '#2563eb',
+    outflowLight: '#93c5fd',
+    returnColor: '#1d4ed8',
+    returnTextColor: '#93c5fd',
+    cardBorder: 'rgba(96, 165, 250, 0.42)',
+    badgeBg: 'rgba(59, 130, 246, 0.2)',
+    badgeStroke: 'rgba(96, 165, 250, 0.55)',
+    badgeText: '#60a5fa',
+    gradInflow: 'url(#grad-inflow-usdc)',
+    gradOutflow: 'url(#grad-outflow-usdc)',
+    gradCircular: 'url(#grad-circular-usdc)'
+  },
+  wxtz: {
+    key: 'wxtz',
+    symbol: 'WXTZ',
+    ticker: 'WXTZ',
+    name: 'Wrapped XTZ (WXTZ)',
+    contract: '0xc9b53ab2679f573e480d01e0f49e2b5cfb7a3eab',
+    l2Contract: '0xc9b53ab2679f573e480d01e0f49e2b5cfb7a3eab',
+    tokenId: '0',
+    decimals: 18,
+    isNative: false,
+    tezEquivalentRate: 1,
+    inflowColor: '#6366f1',
+    inflowLight: '#a5b4fc',
+    outflowColor: '#4f46e5',
+    outflowLight: '#818cf8',
+    returnColor: '#6366f1',
+    returnTextColor: '#c7d2fe',
+    cardBorder: 'rgba(129, 140, 248, 0.42)',
+    badgeBg: 'rgba(99, 102, 241, 0.2)',
+    badgeStroke: 'rgba(165, 180, 252, 0.55)',
+    badgeText: '#a5b4fc',
+    gradInflow: 'url(#grad-inflow-wxtz)',
+    gradOutflow: 'url(#grad-outflow-wxtz)',
+    gradCircular: 'url(#grad-circular-wxtz)'
+  },
+  weth: {
+    key: 'weth',
+    symbol: 'WETH',
+    ticker: 'WETH',
+    name: 'Bridged WETH',
+    contract: '0xfc24f770f94edbca6d6f885e12d4317320bcb401',
+    l2Contract: '0xfc24f770f94edbca6d6f885e12d4317320bcb401',
+    tokenId: '0',
+    decimals: 18,
+    isNative: false,
+    tezEquivalentRate: 3000,
+    inflowColor: '#a855f7',
+    inflowLight: '#c084fc',
+    outflowColor: '#9333ea',
+    outflowLight: '#d8b4fe',
+    returnColor: '#7e22ce',
+    returnTextColor: '#e9d5ff',
+    cardBorder: 'rgba(192, 132, 252, 0.42)',
+    badgeBg: 'rgba(168, 85, 247, 0.2)',
+    badgeStroke: 'rgba(192, 132, 252, 0.55)',
+    badgeText: '#c084fc',
+    gradInflow: 'url(#grad-inflow-weth)',
+    gradOutflow: 'url(#grad-outflow-weth)',
+    gradCircular: 'url(#grad-circular-weth)'
+  },
+  lbtc: {
+    key: 'lbtc',
+    symbol: 'LBTC',
+    ticker: 'LBTC',
+    name: 'Lombard Staked Bitcoin (LBTC)',
+    contract: '0xecac9c5f704e954931349da37f60e39f515c11c1',
+    l2Contract: '0xecac9c5f704e954931349da37f60e39f515c11c1',
+    tokenId: '0',
+    decimals: 8,
+    isNative: false,
+    tezEquivalentRate: 85000,
+    inflowColor: '#d97706',
+    inflowLight: '#fcd34d',
+    outflowColor: '#b45309',
+    outflowLight: '#fbbf24',
+    returnColor: '#f59e0b',
+    returnTextColor: '#fde68a',
+    cardBorder: 'rgba(245, 158, 11, 0.42)',
+    badgeBg: 'rgba(217, 119, 6, 0.22)',
+    badgeStroke: 'rgba(251, 191, 36, 0.55)',
+    badgeText: '#fcd34d',
+    gradInflow: 'url(#grad-inflow-lbtc)',
+    gradOutflow: 'url(#grad-outflow-lbtc)',
+    gradCircular: 'url(#grad-circular-lbtc)'
+  },
+  wbtc: {
+    key: 'wbtc',
+    symbol: 'WBTC',
+    ticker: 'WBTC',
+    name: 'Wrapped BTC (WBTC)',
+    contract: '0xbfc94cd2b1e55999cfc7347a9313e88702b83d0f',
+    l2Contract: '0xbfc94cd2b1e55999cfc7347a9313e88702b83d0f',
+    tokenId: '0',
+    decimals: 8,
+    isNative: false,
+    tezEquivalentRate: 85000,
+    inflowColor: '#f97316',
+    inflowLight: '#fdba74',
+    outflowColor: '#ea580c',
+    outflowLight: '#fb923c',
+    returnColor: '#c2410c',
+    returnTextColor: '#fed7aa',
+    cardBorder: 'rgba(251, 146, 60, 0.42)',
+    badgeBg: 'rgba(249, 115, 22, 0.22)',
+    badgeStroke: 'rgba(251, 146, 60, 0.55)',
+    badgeText: '#fdba74',
+    gradInflow: 'url(#grad-inflow-wbtc)',
+    gradOutflow: 'url(#grad-outflow-wbtc)',
+    gradCircular: 'url(#grad-circular-wbtc)'
+  },
+  xu3o8: {
+    key: 'xu3o8',
+    symbol: 'xU3O8',
+    ticker: 'xU3O8',
+    name: 'Uranium (xU3O8)',
+    contract: '0x79052ab3c166d4899a1e0dd033ac3b379af0b1fd',
+    l2Contract: '0x79052ab3c166d4899a1e0dd033ac3b379af0b1fd',
+    tokenId: '0',
+    decimals: 18,
+    isNative: false,
+    tezEquivalentRate: 7,
+    inflowColor: '#84cc16',
+    inflowLight: '#bef264',
+    outflowColor: '#65a30d',
+    outflowLight: '#a3e635',
+    returnColor: '#4d7c0f',
+    returnTextColor: '#d9f99d',
+    cardBorder: 'rgba(163, 230, 53, 0.42)',
+    badgeBg: 'rgba(132, 204, 22, 0.2)',
+    badgeStroke: 'rgba(163, 230, 53, 0.55)',
+    badgeText: '#bef264',
+    gradInflow: 'url(#grad-inflow-xu3o8)',
+    gradOutflow: 'url(#grad-outflow-xu3o8)',
+    gradCircular: 'url(#grad-circular-xu3o8)'
   }
 };
 
-const ALL_TOKEN_ORDER = ['xtz', 'tzbtc', 'usdt'];
-const FA_TOKEN_KEYS = ['tzbtc', 'usdt'];
-const FA_CONTRACT_LIST = FA_TOKEN_KEYS.map((k) => TOKEN_DEFINITIONS[k].contract).join(',');
-const CONTRACT_TO_TOKEN_KEY = new Map(
-  FA_TOKEN_KEYS.map((k) => [TOKEN_DEFINITIONS[k].contract, k])
-);
+const L1_FA_TOKEN_KEYS = ['tzbtc', 'usdt'];
+const L2_ERC20_TOKEN_KEYS = ['usdt_l2', 'usdc', 'wxtz', 'weth', 'lbtc', 'wbtc', 'xu3o8'];
+const FA_TOKEN_KEYS = [...L1_FA_TOKEN_KEYS, ...L2_ERC20_TOKEN_KEYS];
+const ALL_TOKEN_ORDER = ['xtz', ...FA_TOKEN_KEYS];
+const FA_CONTRACT_LIST = L1_FA_TOKEN_KEYS.map((k) => TOKEN_DEFINITIONS[k].contract).join(',');
+
+const CONTRACT_TO_TOKEN_KEY = new Map();
+FA_TOKEN_KEYS.forEach((k) => {
+  const def = TOKEN_DEFINITIONS[k];
+  if (def.contract) {
+    CONTRACT_TO_TOKEN_KEY.set(def.contract, k);
+    CONTRACT_TO_TOKEN_KEY.set(def.contract.toLowerCase(), k);
+  }
+  if (def.l2Contract) {
+    CONTRACT_TO_TOKEN_KEY.set(def.l2Contract.toLowerCase(), k);
+  }
+});
+
+function createEmptyTokenBalances() {
+  return { tzbtc: 0, usdt: 0, usdt_l2: 0, usdc: 0, wxtz: 0, weth: 0, lbtc: 0, wbtc: 0, xu3o8: 0 };
+}
 
 // Etherlink L2 Bridge & Blockscout Explorer Constants
 const ETHERLINK_BRIDGE_CONTRACT = 'KT1Wj8SUGmnEPFqyahHAcjcNQwe6YGhEXJb5';
 const ETHERLINK_WITHDRAW_CONTRACT = 'KT1BGwyCrnJ6HuEYP7X8Q2UooTdxmEYHiK6j';
 const ETHERLINK_L2_FEED_ADDRESS = '0x000000000000000000000000000000000000feed';
 const ETHERLINK_L2_WITHDRAW_PRECOMPILE = '0xff00000000000000000000000000000000000001';
+const ETHERLINK_ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const ETHERLINK_API_BASE = 'https://explorer.etherlink.com/api/v2';
 const ETHERLINK_EXPLORER_BASE = 'https://explorer.etherlink.com';
+
+// Etherlink Tracked ERC-20 Token Contracts (lowercase)
+const ETHERLINK_LBTC_CONTRACT = '0xecac9c5f704e954931349da37f60e39f515c11c1';
+const ETHERLINK_WBTC_CONTRACT = '0xbfc94cd2b1e55999cfc7347a9313e88702b83d0f';
+const ETHERLINK_USDC_CONTRACT = '0x796ea11fa2dd751ed01b53c372ffdb4aaa8f00f9';
+const ETHERLINK_WETH_CONTRACT = '0xfc24f770f94edbca6d6f885e12d4317320bcb401';
+const ETHERLINK_WXTZ_CONTRACT = '0xc9b53ab2679f573e480d01e0f49e2b5cfb7a3eab';
+const ETHERLINK_XU3O8_CONTRACT = '0x79052ab3c166d4899a1e0dd033ac3b379af0b1fd';
 const ETHERLINK_USDT_CONTRACT = '0x2c03058c8afc06713be23e58d2febc8337dbfe6a';
+const ETHERLINK_TRACKED_TOKEN_CONTRACTS = [
+  ETHERLINK_USDT_CONTRACT,
+  ETHERLINK_USDC_CONTRACT,
+  ETHERLINK_WXTZ_CONTRACT,
+  ETHERLINK_WETH_CONTRACT,
+  ETHERLINK_LBTC_CONTRACT,
+  ETHERLINK_WBTC_CONTRACT,
+  ETHERLINK_XU3O8_CONTRACT
+];
+
+// LayerZero & Cross-Chain Bridge Contracts on Etherlink L2
+const ETHERLINK_LZ_BRIDGE_CONTRACT = '0x1f8e735f424b7a49a885571a2fa104e8c13c26c7';
+const ETHERLINK_LZ_ULN_CONTRACT = '0xcb566e3b6934fa77258d68ea18e931fa75e1aaaa';
+const ETHERLINK_LBTC_BRIDGE_OFFRAMP = '0xcec185eb182c47d1ba1efc84e6959e18cd620be4';
+const ETHERLINK_LBTC_BRIDGE_ROUTER = '0x1912c3cfafe8a76a32a92861d815ac2837f237ca';
+const ETHERLINK_LBTC_TOKEN_POOL = '0x0ad276a2b14eb450897acd100fe530e88d656f02';
+
+const ETHERLINK_BRIDGED_TOKEN_KEYS = new Set(['usdc', 'usdt_l2', 'weth', 'lbtc', 'wbtc']);
+const ETHERLINK_LZ_BRIDGE_METHODS = new Set([
+  'bridge',
+  '0x252f7b01',
+  'validatetransactionproofv1',
+  'lzreceive',
+  'sendfrom',
+  'send',
+  '0x879762e2',
+  'ccipsend',
+  '0x3b81ab9b',
+  'execute'
+]);
 
 // Cross-layer memory: maps lowercase 0x L2 address -> Map<L1 sender address, { address, alias, amount, count, txHashes }>
 const l2ToL1DepositorsMap = new Map();
@@ -167,8 +396,8 @@ function extractEtherlinkEvmAddress(parameter) {
 const ROLLUP_INTERNAL_TAGS = new Set([
   '998126b6:b6b9a58a',
   '2eeb2f90:5e3b8dec',
-  'c7e6b1ec:ae9fb4c0',
-  '556ecc37:efe5d793'
+  'c7e6b1ec:ae9fb4c0'
+  // '556ecc37:efe5d793'
 ]);
 
 function isRollupInternalParty(addr) {
@@ -256,7 +485,7 @@ function formatTokenAmount(amount, tokenKey = 'xtz', compact = false) {
   if (amount === undefined || amount === null || isNaN(amount)) return `0 ${sym}`;
   const abs = Math.abs(amount);
 
-  if (tokenKey === 'tzbtc') {
+  if (tokenKey === 'tzbtc' || tokenKey === 'lbtc' || tokenKey === 'wbtc' || tokenKey === 'weth') {
     if (compact) {
       if (abs >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M ${sym}`;
       if (abs >= 1_000) return `${(amount / 1_000).toFixed(2)}K ${sym}`;
@@ -282,7 +511,7 @@ function formatTokenAmount(amount, tokenKey = 'xtz', compact = false) {
     return `${amount.toLocaleString('en-US', { maximumFractionDigits: 8 })} ${sym}`;
   }
 
-  // Default FA formatting (e.g. USDt with 6 decimals)
+  // Default FA / ERC-20 formatting (e.g. USDt, USDC, WXTZ, xU3O8)
   if (compact) {
     if (abs >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M ${sym}`;
     if (abs >= 10_000) return `${(amount / 1_000).toFixed(1)}K ${sym}`;
@@ -673,14 +902,11 @@ document.querySelectorAll('#circular-mode-control .seg-btn').forEach((btn) => {
   });
 });
 
-// FA Tokens Switch & Individual Token Pills (XTZ, tzBTC, USDt)
-const faTokensToggle = document.getElementById('fa-tokens-toggle');
+// Individual Token Pills & Group Label Shortcuts (Native XTZ | FA: tzBTC, USDt | Etherlink: USDT, USDC, WXTZ, WETH, LBTC, xU3O8)
 const faTokensControl = document.getElementById('fa-tokens-control');
 
 function syncTokenControlsUI() {
-  if (faTokensToggle) {
-    faTokensToggle.checked = viewConfig.faEnabled;
-  }
+  viewConfig.faEnabled = FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
   if (faTokensControl) {
     faTokensControl.classList.toggle('fa-active', viewConfig.faEnabled);
   }
@@ -694,9 +920,14 @@ async function onTokenSelectionChanged() {
   const addr = currentAddress || input.value.trim();
   if (!addr) return;
   const limit = Number(resultLimitSlider.value) || 10000;
-  const cached = cache.get(addr);
+  const isL2 = isEtherlinkAddress(addr);
+  const cacheKey = isL2 ? addr.toLowerCase() : addr;
+  const cached = cache.get(cacheKey);
   const needXtz = viewConfig.enabledTokens.has('xtz');
-  const needFa = viewConfig.faEnabled;
+  const enabledL2 = L2_ERC20_TOKEN_KEYS.filter((k) => viewConfig.enabledTokens.has(k));
+  const needFa = isL2
+    ? enabledL2.length > 0
+    : L1_FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
 
   const missingXtz =
     needXtz &&
@@ -704,8 +935,10 @@ async function onTokenSelectionChanged() {
   const missingFa =
     needFa &&
     (!cached ||
-      (!cached.faExhausted && (cached.faLimit || 0) < limit) ||
-      !cached.accountInfo?.tokenBalancesFetched);
+      !cached.accountInfo?.tokenBalancesFetched ||
+      (isL2
+        ? enabledL2.some((k) => !cached.fetchedL2Tokens?.has(k))
+        : !cached.faExhausted && (cached.faLimit || 0) < limit));
 
   if (missingXtz || missingFa) {
     await generateDataAndDrawDiagram(addr, limit);
@@ -714,29 +947,41 @@ async function onTokenSelectionChanged() {
       currentRawData = needXtz
         ? [...(cached.txData || []).slice(0, limit), ...(cached.specialOps || [])]
         : [];
-      currentFaData = needFa ? (cached.faData || []).slice(0, limit) : [];
+      currentFaData = needFa
+        ? isL2
+          ? cached.faData || []
+          : (cached.faData || []).slice(0, limit)
+        : [];
       currentAccountInfo = cached.accountInfo;
     }
     refreshDiagramFromMemory();
   }
 }
 
-faTokensToggle?.addEventListener('change', function () {
-  if (this.checked) {
-    viewConfig.faEnabled = true;
-    viewConfig.enabledTokens.add('tzbtc');
-    viewConfig.enabledTokens.add('usdt');
+document.querySelectorAll('#fa-token-pills .token-group-label[data-group-toggle]').forEach((labelEl) => {
+  labelEl.addEventListener('click', () => {
+    const grp = labelEl.dataset.groupToggle;
+    const keys = grp === 'fa' ? L1_FA_TOKEN_KEYS : grp === 'etherlink' ? L2_ERC20_TOKEN_KEYS : [];
+    if (keys.length === 0) return;
+
+    const allEnabled = keys.every((k) => viewConfig.enabledTokens.has(k));
+    if (allEnabled) {
+      keys.forEach((k) => viewConfig.enabledTokens.delete(k));
+      if (viewConfig.enabledTokens.size === 0) {
+        viewConfig.enabledTokens.add('xtz');
+      }
+    } else {
+      keys.forEach((k) => viewConfig.enabledTokens.add(k));
+    }
+
     syncTokenControlsUI();
     updateLocationHash();
-    showNotification('FA Tokens enabled: Combining XTZ, tzBTC & USDt ribbons per counterparty node');
-  } else {
-    viewConfig.faEnabled = false;
-    viewConfig.enabledTokens = new Set(['xtz']);
-    syncTokenControlsUI();
-    updateLocationHash();
-    showNotification('FA Tokens disabled: Displaying XTZ flows only');
-  }
-  onTokenSelectionChanged();
+    const activeLabels = ALL_TOKEN_ORDER.filter((k) => viewConfig.enabledTokens.has(k))
+      .map((k) => TOKEN_DEFINITIONS[k]?.ticker || k)
+      .join(' + ');
+    showNotification(`Active token flows: ${activeLabels}`);
+    onTokenSelectionChanged();
+  });
 });
 
 document.querySelectorAll('#fa-token-pills .token-pill').forEach((pill) => {
@@ -750,18 +995,15 @@ document.querySelectorAll('#fa-token-pills .token-pill').forEach((pill) => {
         return;
       }
       viewConfig.enabledTokens.delete(tk);
-      const anyFaActive = FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
-      viewConfig.faEnabled = anyFaActive;
     } else {
       viewConfig.enabledTokens.add(tk);
-      if (FA_TOKEN_KEYS.includes(tk)) {
-        viewConfig.faEnabled = true;
-      }
     }
 
     syncTokenControlsUI();
     updateLocationHash();
-    const activeLabels = [...viewConfig.enabledTokens].map((k) => TOKEN_DEFINITIONS[k]?.ticker || k).join(' + ');
+    const activeLabels = ALL_TOKEN_ORDER.filter((k) => viewConfig.enabledTokens.has(k))
+      .map((k) => TOKEN_DEFINITIONS[k]?.ticker || k)
+      .join(' + ');
     showNotification(`Active token flows: ${activeLabels}`);
     onTokenSelectionChanged();
   });
@@ -804,8 +1046,9 @@ function applyHashFromUrl() {
   const hash = location.hash.slice(1);
   if (!hash) return;
   const [address, resultLimitValue, tezLimitValue, tokensParam] = hash.split(',');
-  if (address) {
-    input.value = decodeURIComponent(address.trim());
+  const cleanAddr = address ? decodeURIComponent(address.trim()) : '';
+  if (cleanAddr) {
+    input.value = cleanAddr;
   }
   if (resultLimitValue && !isNaN(Number(resultLimitValue))) {
     resultLimitSlider.value = resultLimitValue;
@@ -819,17 +1062,18 @@ function applyHashFromUrl() {
     syncDustChips(tezLimitValue);
   }
   if (tokensParam) {
+    const isL2 = isEtherlinkAddress(cleanAddr);
     const parsedTokens = tokensParam
       .toLowerCase()
       .split('+')
+      .map((k) => (k === 'usdt' && isL2 ? 'usdt_l2' : k))
       .filter((k) => Boolean(TOKEN_DEFINITIONS[k]));
     if (parsedTokens.length > 0) {
       viewConfig.enabledTokens = new Set(parsedTokens);
-      viewConfig.faEnabled = FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
       syncTokenControlsUI();
     }
   }
-  if (address && address.trim() !== currentAddress) {
+  if (cleanAddr && cleanAddr !== currentAddress) {
     go();
   }
 }
@@ -858,7 +1102,7 @@ window.addEventListener('resize', () => {
 // ============================================================================
 
 async function fetchAccountTokenBalances(tezosAddress) {
-  const tokenBalances = { tzbtc: 0, usdt: 0 };
+  const tokenBalances = createEmptyTokenBalances();
   try {
     const balRes = await fetch(
       `https://kukai.api.tzkt.io/v1/tokens/balances?account=${encodeURIComponent(tezosAddress)}&token.contract.in=${FA_CONTRACT_LIST}&balance.gt=0&select=token.contract.address,balance`
@@ -891,7 +1135,7 @@ async function fetchAccountMetadata(tezosAddress, needFa = false) {
     const accData = accRes.ok ? await accRes.json() : null;
     const info = (Array.isArray(accData) ? accData[0] : accData) || {};
 
-    let tokenBalances = { tzbtc: 0, usdt: 0 };
+    let tokenBalances = createEmptyTokenBalances();
     let tokenBalancesFetched = false;
     if (needFa) {
       if ((info.tokenBalancesCount ?? 1) > 0) {
@@ -1055,19 +1299,20 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   const evmAddress = String(rawEvmAddress || '').trim().toLowerCase();
   const numLimit = Number(requestedLimit) || 10000;
   const needXtz = viewConfig.enabledTokens.has('xtz');
-  const needFa = viewConfig.faEnabled;
+  const enabledL2Keys = L2_ERC20_TOKEN_KEYS.filter((k) => viewConfig.enabledTokens.has(k));
+  const needFa = enabledL2Keys.length > 0;
 
   if (cache.has(evmAddress)) {
     const cached = cache.get(evmAddress);
     const xtzReady = !needXtz || cached.exhausted || (cached.limit || 0) >= numLimit;
     const faReady =
       !needFa ||
-      ((cached.faExhausted || (cached.faLimit || 0) >= numLimit) &&
-        Boolean(cached.accountInfo?.tokenBalancesFetched));
+      (Boolean(cached.accountInfo?.tokenBalancesFetched) &&
+        enabledL2Keys.every((k) => cached.fetchedL2Tokens?.has(k)));
     if (xtzReady && faReady) {
       return {
         operations: needXtz ? cached.txData.slice(0, numLimit) : [],
-        faTransfers: needFa ? (cached.faData || []).slice(0, numLimit) : [],
+        faTransfers: needFa ? cached.faData || [] : [],
         accountInfo: cached.accountInfo
       };
     }
@@ -1076,12 +1321,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
   const loaderEl = document.getElementById('loader');
   const loaderStatus = document.getElementById('loader-status');
   const emptyState = document.getElementById('empty-state');
-  const colHeadersEl = document.getElementById('sankey-col-headers');
   const diagramEl = document.getElementById('sankey-diagram');
   const statsStrip = document.getElementById('stats-strip');
 
   if (emptyState) emptyState.style.display = 'none';
-  if (colHeadersEl) colHeadersEl.style.display = 'none';
   if (diagramEl) diagramEl.style.display = 'none';
   if (statsStrip) statsStrip.style.display = 'none';
   if (loaderEl) loaderEl.style.display = 'flex';
@@ -1091,12 +1334,25 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
 
   const existing = cache.get(evmAddress);
   const enc = encodeURIComponent(evmAddress);
-  const batchSize = Math.min(10000, Math.max(1000, numLimit));
+  const fetchedL2Tokens = new Set(existing?.fetchedL2Tokens || []);
+  const missingL2Keys = enabledL2Keys.filter((k) => !fetchedL2Tokens.has(k));
 
   const aliasLookup = new Map([
+    [ETHERLINK_ZERO_ADDRESS, 'Zero / Mint & Burn Address (0x0)'],
     [ETHERLINK_L2_FEED_ADDRESS, 'Etherlink L1 Deposit'],
     [ETHERLINK_L2_WITHDRAW_PRECOMPILE, 'Etherlink L1 Withdraw'],
-    ['0xc9b53ab2679f573e480d01e0f49e2b5cfb7a3eab', 'Wrapped XTZ (WXTZ)'],
+    [ETHERLINK_LZ_BRIDGE_CONTRACT, 'LayerZero Bridge'],
+    [ETHERLINK_LZ_ULN_CONTRACT, 'LayerZero UltraLightNodeV2'],
+    [ETHERLINK_LBTC_BRIDGE_OFFRAMP, 'LayerZero / Lombard Bridge OffRamp'],
+    [ETHERLINK_LBTC_BRIDGE_ROUTER, 'LayerZero / Lombard Bridge Router'],
+    [ETHERLINK_LBTC_TOKEN_POOL, 'Lombard LBTC Bridge Pool'],
+    [ETHERLINK_WXTZ_CONTRACT, 'Wrapped XTZ (WXTZ)'],
+    [ETHERLINK_USDC_CONTRACT, 'LayerZero Bridged USDC'],
+    [ETHERLINK_USDT_CONTRACT, 'Tether USD (USDT)'],
+    [ETHERLINK_WETH_CONTRACT, 'Bridged WETH'],
+    [ETHERLINK_LBTC_CONTRACT, 'Lombard Staked Bitcoin (LBTC)'],
+    [ETHERLINK_WBTC_CONTRACT, 'Wrapped BTC (WBTC)'],
+    [ETHERLINK_XU3O8_CONTRACT, 'Uranium (xU3O8)'],
     ['0x65fe928c5d04a2da42347ba9d4d1c3f4952851f5', 'Superlend XTZ Gateway (WrappedTokenGatewayV3)']
   ]);
 
@@ -1122,10 +1378,10 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     };
   }
 
-  function buildV2NextQuery(nextPageParams) {
+  function buildV2NextQuery(nextPageParams, extraParams = {}) {
     if (!nextPageParams || typeof nextPageParams !== 'object') return '';
     const parts = [];
-    Object.entries(nextPageParams).forEach(([k, v]) => {
+    Object.entries({ ...extraParams, ...nextPageParams, items_count: 100 }).forEach(([k, v]) => {
       if (v !== null && v !== undefined && v !== '') {
         parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
       }
@@ -1133,38 +1389,9 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     return parts.length > 0 ? `?${parts.join('&')}` : '';
   }
 
-  async function fetchBlockscoutV1WithRetry(url) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const res = await fetch(url);
-        if (res.status === 429 || !res.ok) {
-          if (attempt < 2) {
-            await new Promise((r) => setTimeout(r, 1050 * (attempt + 1)));
-            continue;
-          }
-          return null;
-        }
-        const json = await res.json();
-        if (
-          attempt < 2 &&
-          json?.status === '0' &&
-          typeof json?.message === 'string' &&
-          json.message.toLowerCase().includes('too many requests')
-        ) {
-          await new Promise((r) => setTimeout(r, 1050 * (attempt + 1)));
-          continue;
-        }
-        return json;
-      } catch (_) {
-        if (attempt < 2) await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
-      }
-    }
-    return null;
-  }
-
-  async function fetchV2InternalPaginated(encodedAddr, maxPages = 12) {
+  async function fetchV2InternalPaginated(encodedAddr, maxPages = 5) {
     const allItems = [];
-    let nextQs = '';
+    let nextQs = '?items_count=100';
     let exhausted = false;
     for (let page = 0; page < maxPages; page++) {
       try {
@@ -1187,9 +1414,9 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     return { items: allItems, exhausted };
   }
 
-  async function fetchV2TransactionsPaginated(encodedAddr, maxPages = 35) {
+  async function fetchV2TransactionsPaginated(encodedAddr, maxPages = 5) {
     const allItems = [];
-    let nextQs = '';
+    let nextQs = '?items_count=100';
     let exhausted = false;
     for (let page = 0; page < maxPages; page++) {
       try {
@@ -1212,28 +1439,159 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     return { items: allItems, exhausted };
   }
 
-  // Fire requests in parallel; only txListPromise touches Blockscout v1 (/api) so it never self-rate-limits
+  async function fetchZeroAddressTransfersForTokens(tokenContracts, pagesPerToken = 2) {
+    const lists = await Promise.all(
+      tokenContracts.map(async (tokAddr) => {
+        const items = [];
+        let qs = '?items_count=100';
+        for (let p = 0; p < pagesPerToken; p++) {
+          try {
+            const r = await fetch(`${ETHERLINK_API_BASE}/tokens/${tokAddr}/transfers${qs}`);
+            if (!r.ok) break;
+            const j = await r.json();
+            if (Array.isArray(j?.items)) {
+              j.items.forEach((tr) => {
+                const fHash = String(tr.from?.hash || '').toLowerCase();
+                const tHash = String(tr.to?.hash || '').toLowerCase();
+                if (
+                  fHash === ETHERLINK_ZERO_ADDRESS ||
+                  tHash === ETHERLINK_ZERO_ADDRESS ||
+                  tr.type === 'token_minting' ||
+                  tr.type === 'token_burning'
+                ) {
+                  items.push(tr);
+                }
+              });
+            }
+            const next = buildV2NextQuery(j?.next_page_params);
+            if (!next) break;
+            qs = next;
+          } catch (_) {
+            break;
+          }
+        }
+        return items;
+      })
+    );
+    return lists.flat();
+  }
+
+  let unfilteredFaShortCircuit = Boolean(existing?.unfilteredFaComplete);
+
+  async function fetchV2TokenTransfersSmart(encodedAddr, targetTokenKeys, maxPagesPerToken = 15) {
+    // 1. Special case: 0x0000000000000000000000000000000000000000 times out on /addresses/0x0/token-transfers
+    if (evmAddress === ETHERLINK_ZERO_ADDRESS) {
+      const targetContracts = targetTokenKeys.map((k) => TOKEN_DEFINITIONS[k]?.l2Contract).filter(Boolean);
+      const zeroItems = await fetchZeroAddressTransfersForTokens(targetContracts, 2);
+      targetTokenKeys.forEach((k) => fetchedL2Tokens.add(k));
+      return { items: zeroItems, exhausted: true };
+    }
+
+    // 2. Special case: LayerZero Bridge contract (hydrate direct transfers + LBTC pool transfers + bridged token mint/burns)
+    if (evmAddress === ETHERLINK_LZ_BRIDGE_CONTRACT) {
+      const bridgedContracts = [
+        ETHERLINK_USDC_CONTRACT,
+        ETHERLINK_USDT_CONTRACT,
+        ETHERLINK_WETH_CONTRACT,
+        ETHERLINK_LBTC_CONTRACT,
+        ETHERLINK_WBTC_CONTRACT
+      ];
+      const [directRes, lbtcPoolRes, mintBurnItems] = await Promise.all([
+        fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers?type=ERC-20&items_count=100`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch(`${ETHERLINK_API_BASE}/addresses/${ETHERLINK_LBTC_TOKEN_POOL}/token-transfers?type=ERC-20&items_count=100`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetchZeroAddressTransfersForTokens(bridgedContracts, 2)
+      ]);
+      L2_ERC20_TOKEN_KEYS.forEach((k) => fetchedL2Tokens.add(k));
+      return {
+        items: [
+          ...(Array.isArray(directRes?.items) ? directRes.items : []),
+          ...(Array.isArray(lbtcPoolRes?.items) ? lbtcPoolRes.items : []),
+          ...mintBurnItems
+        ],
+        exhausted: true
+      };
+    }
+
+    // 3. Fast-Path (only when multiple L2 tokens are active): try 1 unfiltered request (?type=ERC-20&items_count=100).
+    //    If exhausted (<100 total ERC-20 transfers), 1 request covers all active tokens.
+    //    If NOT exhausted, discard the partial page so inactive tokens are never partially loaded.
+    const allItems = [];
+    if (
+      targetTokenKeys.length > 1 &&
+      !existing?.unfilteredTried &&
+      evmAddress !== ETHERLINK_WXTZ_CONTRACT &&
+      evmAddress !== ETHERLINK_XU3O8_CONTRACT
+    ) {
+      try {
+        const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers?type=ERC-20&items_count=100`);
+        if (res.ok) {
+          const json = await res.json();
+          if (!json?.next_page_params && Array.isArray(json?.items)) {
+            unfilteredFaShortCircuit = true;
+            L2_ERC20_TOKEN_KEYS.forEach((k) => fetchedL2Tokens.add(k));
+            return { items: json.items, exhausted: true };
+          }
+        }
+      } catch (_) {
+        // Proceed to per-token fetch
+      }
+    }
+
+    // 4. Per-Token Fetch: paginate ONLY the currently enabled missing token(s) (?type=ERC-20&token={contract}&items_count=100)
+    const perTokenResults = await Promise.all(
+      targetTokenKeys.map(async (tk) => {
+        const tokAddr = TOKEN_DEFINITIONS[tk]?.l2Contract || TOKEN_DEFINITIONS[tk]?.contract;
+        if (!tokAddr) return [];
+        const tokenItems = [];
+        let nextQs = `?type=ERC-20&token=${tokAddr}&items_count=100`;
+        for (let page = 0; page < maxPagesPerToken; page++) {
+          try {
+            const res = await fetch(`${ETHERLINK_API_BASE}/addresses/${encodedAddr}/token-transfers${nextQs}`);
+            if (!res.ok) break;
+            const json = await res.json();
+            if (Array.isArray(json?.items)) {
+              tokenItems.push(...json.items);
+            }
+            const qs = buildV2NextQuery(json?.next_page_params, { type: 'ERC-20', token: tokAddr });
+            if (!qs) break;
+            nextQs = qs;
+          } catch (_) {
+            break;
+          }
+        }
+        fetchedL2Tokens.add(tk);
+        return tokenItems;
+      })
+    );
+
+    perTokenResults.forEach((items) => allItems.push(...items));
+
+    if (evmAddress === ETHERLINK_WXTZ_CONTRACT || evmAddress === ETHERLINK_XU3O8_CONTRACT) {
+      const extra = await fetchZeroAddressTransfersForTokens([evmAddress], 2);
+      allItems.push(...extra);
+    }
+
+    return { items: allItems, exhausted: true };
+  }
+
+  const needXtzFetch = needXtz && !existing?.exhausted;
+  const needFaFetch = needFa && missingL2Keys.length > 0;
+
   const addrPromise = !existing?.accountInfo
     ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}`).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))
     : Promise.resolve(null);
 
-  const txListPromise =
-    needXtz && !existing?.exhausted
-      ? fetchBlockscoutV1WithRetry(
-          `${ETHERLINK_EXPLORER_BASE}/api?module=account&action=txlist&address=${enc}&page=1&offset=${batchSize}&sort=desc`
-        )
-      : Promise.resolve(null);
-
-  const v2SamplePromise =
-    needXtz && !existing?.exhausted
-      ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}/transactions`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null)
-      : Promise.resolve(null);
+  const topTxV2Promise = needXtzFetch
+    ? fetchV2TransactionsPaginated(enc, 5)
+    : Promise.resolve(null);
 
   const internalV2Promise =
     needXtz && !existing?.internalChecked
-      ? fetchV2InternalPaginated(enc, 12)
+      ? fetchV2InternalPaginated(enc, 5)
       : Promise.resolve(null);
 
   const tokensBalPromise =
@@ -1243,12 +1601,9 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           .catch(() => null)
       : Promise.resolve(null);
 
-  const tokenTxPromise =
-    needFa && !existing?.faExhausted
-      ? fetch(`${ETHERLINK_API_BASE}/addresses/${enc}/token-transfers?type=ERC-20&token=${ETHERLINK_USDT_CONTRACT}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null)
-      : Promise.resolve(null);
+  const tokenTxPromise = needFaFetch
+    ? fetchV2TokenTransfersSmart(enc, missingL2Keys, 15)
+    : Promise.resolve(null);
 
   const rawHexNoPrefix = evmAddress.replace(/^0x/i, '');
   const isFeedAddress = evmAddress === ETHERLINK_L2_FEED_ADDRESS;
@@ -1267,18 +1622,9 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           .catch(() => [])
       : Promise.resolve(null);
 
-  const [
-    addrJson,
-    txListJson,
-    v2SampleJson,
-    intV2Result,
-    tokJson,
-    tokenTxJson,
-    l1DepositsRows
-  ] = await Promise.all([
+  const [addrJson, topTxV2Result, intV2Result, tokJson, tokenTxJson, l1DepositsRows] = await Promise.all([
     addrPromise,
-    txListPromise,
-    v2SamplePromise,
+    topTxV2Promise,
     internalV2Promise,
     tokensBalPromise,
     tokenTxPromise,
@@ -1295,7 +1641,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       const sAddr = op.sender?.address;
       const sAlias = op.sender?.alias || '';
       const amt = parseFloat((op.amount || 0) / 1_000_000);
-      if (!sAddr || isRollupInternalParty(sAddr) || !amt || ! (amt > 0)) return;
+      if (!sAddr || isRollupInternalParty(sAddr) || !amt || !(amt > 0)) return;
       let rec = depMap.get(sAddr);
       if (!rec) {
         rec = {
@@ -1332,7 +1678,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       balance: (weiBal / 1e18) * 1_000_000, // Normalized to mutez for unified formatting
       hasTokens: Boolean(addrJson?.has_tokens),
       hasTokenTransfers: Boolean(addrJson?.has_token_transfers),
-      tokenBalances: { tzbtc: 0, usdt: 0 },
+      tokenBalances: createEmptyTokenBalances(),
       tokenBalancesFetched: !addrJson?.has_tokens
     };
   }
@@ -1342,20 +1688,37 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     items.forEach((item) => {
       const sym = String(item.token?.symbol || '').toLowerCase();
       const cAddr = String(item.token?.address_hash || '').toLowerCase();
-      const dec = Number(item.token?.decimals || 6);
-      const bal = parseFloat(item.value || '0') / Math.pow(10, dec);
-      if (sym === 'usdt' || cAddr === ETHERLINK_USDT_CONTRACT) {
-        accountInfo.tokenBalances.usdt = bal;
-      } else if (sym === 'tzbtc') {
-        accountInfo.tokenBalances.tzbtc = bal;
+      const tk =
+        CONTRACT_TO_TOKEN_KEY.get(cAddr) ||
+        (sym === 'usdt' || sym === 'usdt0'
+          ? 'usdt_l2'
+          : sym === 'usdc' || sym === 'usdc.e'
+          ? 'usdc'
+          : sym === 'wxtz'
+          ? 'wxtz'
+          : sym === 'weth' || sym === 'weth.e'
+          ? 'weth'
+          : sym === 'lbtc'
+          ? 'lbtc'
+          : sym === 'wbtc' || sym === 'wbtc.e'
+          ? 'wbtc'
+          : sym === 'xu3o8'
+          ? 'xu3o8'
+          : sym === 'tzbtc'
+          ? 'tzbtc'
+          : null);
+      if (tk && TOKEN_DEFINITIONS[tk]) {
+        const dec = Number(item.token?.decimals || TOKEN_DEFINITIONS[tk].decimals || 6);
+        const bal = parseFloat(item.value || '0') / Math.pow(10, dec);
+        accountInfo.tokenBalances[tk] = bal;
       }
     });
     accountInfo.tokenBalancesFetched = true;
   }
 
-  // Harvest contract/account aliases from v2 sample & internal txs
-  if (Array.isArray(v2SampleJson?.items)) {
-    v2SampleJson.items.forEach((tx) => {
+  // Harvest contract/account aliases from v2 top-level & internal txs
+  if (Array.isArray(topTxV2Result?.items)) {
+    topTxV2Result.items.forEach((tx) => {
       rememberPartyAlias(tx.from);
       rememberPartyAlias(tx.to);
     });
@@ -1367,293 +1730,407 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
     });
   }
 
-  // 2. Parse Native XTZ Transactions on Etherlink L2
+  // 2. Parse Native XTZ Transactions on Etherlink L2 (only when needXtzFetch is true)
   let txData = existing?.txData ? [...existing.txData] : [];
-  const seenKeys = new Set(txData.map((op) => op._dedupKey || op.hash));
+  if (needXtzFetch) {
+    const seenKeys = new Set(txData.map((op) => op._dedupKey || op.hash));
 
-  // If viewing 0x0000...feed directly, hydrate both L1 bridge inflows (from KT1Wj8...) and L2 outflows (to 0x... recipients)
-  if (isFeedAddress && Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0) {
-    l1DepositsRows.forEach((op) => {
-      const rawAmt = Number(op.amount || 0);
-      if (!rawAmt || rawAmt <= 0) return;
-      const l1SenderAddr = op.sender?.address || '';
-      const l1SenderAlias = op.sender?.alias || '';
-      const l2TargetAddr = extractEtherlinkEvmAddress(op.parameter);
+    // If viewing 0x0000...feed directly, hydrate both L1 bridge inflows (from KT1Wj8...) and L2 outflows (to 0x... recipients)
+    if (isFeedAddress && Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0) {
+      l1DepositsRows.forEach((op) => {
+        const rawAmt = Number(op.amount || 0);
+        if (!rawAmt || rawAmt <= 0) return;
+        const l1SenderAddr = op.sender?.address || '';
+        const l1SenderAlias = op.sender?.alias || '';
+        const l2TargetAddr = extractEtherlinkEvmAddress(op.parameter);
 
-      if (l1SenderAddr && !isRollupInternalParty(l1SenderAddr)) {
-        const inKey = `${op.hash}:l1-in:${l1SenderAddr}:${ETHERLINK_L2_FEED_ADDRESS}`;
-        if (!seenKeys.has(inKey)) {
-          seenKeys.add(inKey);
-          txData.push({
-            _dedupKey: inKey,
-            id: Number(op.id || 0),
-            hash: op.hash,
-            timestamp: op.timestamp,
-            amount: rawAmt,
-            sender: { address: ETHERLINK_BRIDGE_CONTRACT, alias: 'Etherlink Bridge' },
-            target: { address: ETHERLINK_L2_FEED_ADDRESS, alias: 'Etherlink L1 Deposit' },
-            l1SubBranch: { address: l1SenderAddr, alias: l1SenderAlias }
-          });
+        if (l1SenderAddr && !isRollupInternalParty(l1SenderAddr)) {
+          const inKey = `${op.hash}:l1-in:${l1SenderAddr}:${ETHERLINK_L2_FEED_ADDRESS}`;
+          if (!seenKeys.has(inKey)) {
+            seenKeys.add(inKey);
+            txData.push({
+              _dedupKey: inKey,
+              id: Number(op.id || 0),
+              hash: op.hash,
+              timestamp: op.timestamp,
+              amount: rawAmt,
+              sender: { address: ETHERLINK_BRIDGE_CONTRACT, alias: 'Etherlink Bridge' },
+              target: { address: ETHERLINK_L2_FEED_ADDRESS, alias: 'Etherlink L1 Deposit' },
+              l1SubBranch: { address: l1SenderAddr, alias: l1SenderAlias }
+            });
+          }
         }
+
+        if (l2TargetAddr) {
+          const outKey = `${op.hash}:l2-out:${ETHERLINK_L2_FEED_ADDRESS}:${l2TargetAddr}`;
+          if (!seenKeys.has(outKey)) {
+            seenKeys.add(outKey);
+            txData.push({
+              _dedupKey: outKey,
+              id: Number(op.id || 0),
+              hash: op.hash,
+              timestamp: op.timestamp,
+              amount: rawAmt,
+              sender: { address: ETHERLINK_L2_FEED_ADDRESS, alias: 'Etherlink L1 Deposit' },
+              target: makeParty(l2TargetAddr)
+            });
+          }
+        }
+      });
+    }
+
+    // If viewing 0xff00...0001 directly, also hydrate L2->L1 withdrawals from TzKT KT1BGwy...
+    if (isWithdrawPrecompile && Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0) {
+      const paramByHash = new Map();
+      l1DepositsRows.forEach((op) => {
+        if (op?.hash && op?.parameter) paramByHash.set(op.hash, op.parameter);
+      });
+      l1DepositsRows.forEach((op) => {
+        const rawAmt = Number(op.amount || 0);
+        if (!rawAmt || rawAmt <= 0) return;
+        const param = op.parameter || paramByHash.get(op.hash);
+        const l2Caller = extractEtherlinkEvmAddress(param);
+        if (op.target?.address === ETHERLINK_WITHDRAW_CONTRACT && l2Caller) {
+          const inKey = `${op.hash}:l2-in:${l2Caller}:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}`;
+          if (!seenKeys.has(inKey)) {
+            seenKeys.add(inKey);
+            txData.push({
+              _dedupKey: inKey,
+              id: Number(op.id || 0),
+              hash: op.hash,
+              timestamp: op.timestamp,
+              amount: rawAmt,
+              sender: makeParty(l2Caller),
+              target: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' }
+            });
+          }
+        } else if (
+          op.sender?.address === ETHERLINK_WITHDRAW_CONTRACT &&
+          op.target?.address &&
+          !isRollupInternalParty(op.target.address)
+        ) {
+          const outKey = `${op.hash}:l1-out:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}:${op.target.address}`;
+          if (!seenKeys.has(outKey)) {
+            seenKeys.add(outKey);
+            txData.push({
+              _dedupKey: outKey,
+              id: Number(op.id || 0),
+              hash: op.hash,
+              timestamp: op.timestamp,
+              amount: rawAmt,
+              sender: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' },
+              target: { address: ETHERLINK_WITHDRAW_CONTRACT, alias: 'Etherlink Withdraw' },
+              l1WithdrawTarget: op.target.address
+            });
+          }
+        }
+      });
+    }
+
+    let topExhausted = Boolean(topTxV2Result?.exhausted);
+    let minTopBlock = Infinity;
+
+    if (Array.isArray(topTxV2Result?.items)) {
+      topTxV2Result.items.forEach((tx) => {
+        const blk = Number(tx.block_number || 0);
+        if (blk > 0 && blk < minTopBlock) minTopBlock = blk;
+
+        const isOk = tx.status === 'ok' || tx.result === 'success';
+        const rawVal = parseFloat(tx.value || '0');
+        if (!isOk || !rawVal || rawVal <= 0) return;
+
+        const sender = makeParty(tx.from?.hash, tx.from?.name);
+        const target = makeParty(tx.to?.hash, tx.to?.name);
+        if (!sender.address || !target.address) return;
+
+        const dedupKey = `${tx.hash}:${sender.address}:${target.address}`;
+        if (seenKeys.has(dedupKey)) return;
+        seenKeys.add(dedupKey);
+
+        const l1WithdrawTarget =
+          target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE
+            ? extractTezosL1AddressFromHex(tx.raw_input)
+            : null;
+
+        const normAmt = (rawVal / 1e18) * 1_000_000;
+        txData.push({
+          _dedupKey: dedupKey,
+          id: blk,
+          hash: tx.hash,
+          timestamp: tx.timestamp,
+          amount: normAmt,
+          sender,
+          target,
+          l1WithdrawTarget
+        });
+
+        if (isWithdrawPrecompile && target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE && l1WithdrawTarget) {
+          const outKey = `${tx.hash}:l1-out:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}:${l1WithdrawTarget}`;
+          if (!seenKeys.has(outKey)) {
+            seenKeys.add(outKey);
+            txData.push({
+              _dedupKey: outKey,
+              id: blk,
+              hash: tx.hash,
+              timestamp: tx.timestamp,
+              amount: normAmt,
+              sender: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' },
+              target: { address: ETHERLINK_WITHDRAW_CONTRACT, alias: 'Etherlink Withdraw' },
+              l1WithdrawTarget
+            });
+          }
+        }
+      });
+    }
+
+    let intExhausted = true;
+    let minIntBlock = Infinity;
+
+    if (Array.isArray(intV2Result?.items)) {
+      intExhausted = Boolean(intV2Result.exhausted);
+      intV2Result.items.forEach((itx) => {
+        const blk = Number(itx.block_number || 0);
+        if (blk > 0 && blk < minIntBlock) minIntBlock = blk;
+
+        const rawVal = parseFloat(itx.value || '0');
+        if (!itx.success || !rawVal || rawVal <= 0) return;
+        const sender = makeParty(itx.from?.hash, itx.from?.name);
+        const target = makeParty(itx.to?.hash, itx.to?.name);
+        if (!sender.address || !target.address) return;
+        if (
+          sender.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE &&
+          seenKeys.has(`${itx.transaction_hash}:${ETHERLINK_L2_FEED_ADDRESS}:${target.address}`)
+        ) {
+          return;
+        }
+        const dedupKey = `${itx.transaction_hash}:${sender.address}:${target.address}:${itx.index ?? ''}`;
+        const pairKey = `${itx.transaction_hash}:${sender.address}:${target.address}`;
+        if (seenKeys.has(dedupKey) || seenKeys.has(pairKey)) return;
+        seenKeys.add(dedupKey);
+        seenKeys.add(pairKey);
+        txData.push({
+          _dedupKey: dedupKey,
+          id: blk,
+          hash: itx.transaction_hash,
+          timestamp: itx.timestamp,
+          amount: (rawVal / 1e18) * 1_000_000,
+          sender,
+          target
+        });
+      });
+    }
+
+    // Align the block window if either top-level or internal transactions were truncated at the fetch limit
+    let cutoffBlock = 0;
+    if (!isFeedAddress && !isWithdrawPrecompile && (!topExhausted || !intExhausted)) {
+      cutoffBlock = Math.max(
+        !topExhausted && Number.isFinite(minTopBlock) ? minTopBlock : 0,
+        !intExhausted && Number.isFinite(minIntBlock) ? minIntBlock : 0
+      );
+      if (cutoffBlock > 0) {
+        txData = txData.filter((op) => !op.id || op.id >= cutoffBlock);
       }
+    }
 
-      if (l2TargetAddr) {
-        const outKey = `${op.hash}:l2-out:${ETHERLINK_L2_FEED_ADDRESS}:${l2TargetAddr}`;
-        if (!seenKeys.has(outKey)) {
-          seenKeys.add(outKey);
-          txData.push({
-            _dedupKey: outKey,
-            id: Number(op.id || 0),
-            hash: op.hash,
-            timestamp: op.timestamp,
-            amount: rawAmt,
-            sender: { address: ETHERLINK_L2_FEED_ADDRESS, alias: 'Etherlink L1 Deposit' },
-            target: makeParty(l2TargetAddr)
-          });
+    // Recover internal XTZ inflows omitted by Blockscout's /addresses/{addr}/internal-transactions index
+    // (only triggered when sampled XTZ net flow shows an impossible deficit, so normal wallets make 0 extra calls)
+    if (!isFeedAddress && !isWithdrawPrecompile && evmAddress !== ETHERLINK_ZERO_ADDRESS) {
+      let sampledNetXtz = 0;
+      const recordedInflowHashes = new Set();
+      txData.forEach((op) => {
+        const amtXtz = (Number(op.amount) || 0) / 1_000_000;
+        if (op.target?.address === evmAddress && op.sender?.address !== evmAddress) {
+          sampledNetXtz += amtXtz;
+          if (op.hash) recordedInflowHashes.add(String(op.hash).toLowerCase());
+        } else if (op.sender?.address === evmAddress && op.target?.address !== evmAddress) {
+          sampledNetXtz -= amtXtz;
         }
-      }
-    });
-  }
-
-  // If viewing 0xff00...0001 directly, also hydrate L2->L1 withdrawals from TzKT KT1BGwy...
-  if (isWithdrawPrecompile && Array.isArray(l1DepositsRows) && l1DepositsRows.length > 0) {
-    const paramByHash = new Map();
-    l1DepositsRows.forEach((op) => {
-      if (op?.hash && op?.parameter) paramByHash.set(op.hash, op.parameter);
-    });
-    l1DepositsRows.forEach((op) => {
-      const rawAmt = Number(op.amount || 0);
-      if (!rawAmt || rawAmt <= 0) return;
-      const param = op.parameter || paramByHash.get(op.hash);
-      const l2Caller = extractEtherlinkEvmAddress(param);
-      if (op.target?.address === ETHERLINK_WITHDRAW_CONTRACT && l2Caller) {
-        const inKey = `${op.hash}:l2-in:${l2Caller}:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}`;
-        if (!seenKeys.has(inKey)) {
-          seenKeys.add(inKey);
-          txData.push({
-            _dedupKey: inKey,
-            id: Number(op.id || 0),
-            hash: op.hash,
-            timestamp: op.timestamp,
-            amount: rawAmt,
-            sender: makeParty(l2Caller),
-            target: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' }
-          });
-        }
-      } else if (
-        op.sender?.address === ETHERLINK_WITHDRAW_CONTRACT &&
-        op.target?.address &&
-        !isRollupInternalParty(op.target.address)
-      ) {
-        const outKey = `${op.hash}:l1-out:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}:${op.target.address}`;
-        if (!seenKeys.has(outKey)) {
-          seenKeys.add(outKey);
-          txData.push({
-            _dedupKey: outKey,
-            id: Number(op.id || 0),
-            hash: op.hash,
-            timestamp: op.timestamp,
-            amount: rawAmt,
-            sender: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' },
-            target: { address: ETHERLINK_WITHDRAW_CONTRACT, alias: 'Etherlink Withdraw' },
-            l1WithdrawTarget: op.target.address
-          });
-        }
-      }
-    });
-  }
-
-  let topExhausted = true;
-  let minTopBlock = Infinity;
-
-  if (Array.isArray(txListJson?.result)) {
-    topExhausted = txListJson.result.length < batchSize;
-    txListJson.result.forEach((tx) => {
-      const blk = Number(tx.blockNumber || 0);
-      if (blk > 0 && blk < minTopBlock) minTopBlock = blk;
-
-      const isOk = tx.isError === '0' && tx.txreceipt_status !== '0';
-      const rawVal = parseFloat(tx.value || '0');
-      if (!isOk || !rawVal || rawVal <= 0) return;
-
-      const sender = makeParty(tx.from);
-      const target = makeParty(tx.to);
-      if (!sender.address || !target.address) return;
-
-      const dedupKey = `${tx.hash}:${sender.address}:${target.address}`;
-      if (seenKeys.has(dedupKey)) return;
-      seenKeys.add(dedupKey);
-
-      const l1WithdrawTarget =
-        target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE
-          ? extractTezosL1AddressFromHex(tx.input)
-          : null;
-
-      const normAmt = (rawVal / 1e18) * 1_000_000;
-      const tsMs = Number(tx.timeStamp) * 1000;
-      txData.push({
-        _dedupKey: dedupKey,
-        id: blk,
-        hash: tx.hash,
-        timestamp: tsMs,
-        amount: normAmt,
-        sender,
-        target,
-        l1WithdrawTarget
       });
 
-      if (isWithdrawPrecompile && target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE && l1WithdrawTarget) {
-        const outKey = `${tx.hash}:l1-out:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}:${l1WithdrawTarget}`;
-        if (!seenKeys.has(outKey)) {
-          seenKeys.add(outKey);
-          txData.push({
-            _dedupKey: outKey,
-            id: blk,
-            hash: tx.hash,
-            timestamp: tsMs,
-            amount: normAmt,
-            sender: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' },
-            target: { address: ETHERLINK_WITHDRAW_CONTRACT, alias: 'Etherlink Withdraw' },
-            l1WithdrawTarget
-          });
+      if (sampledNetXtz < -10) {
+        try {
+          const missingTxHashes = [];
+          const cbMetaByHash = new Map();
+          let recoveredDeltaXtz = 0;
+          const targetDeficitXtz = Math.abs(sampledNetXtz) * 0.9;
+          let nextCbQs = '?items_count=100';
+          let stopCbScan = false;
+          for (let page = 0; page < 6 && !stopCbScan; page++) {
+            const cbResp = await fetch(`${ETHERLINK_API_BASE}/addresses/${enc}/coin-balance-history${nextCbQs}`);
+            if (!cbResp.ok) break;
+            const cbJson = await cbResp.json();
+            const cbItems = Array.isArray(cbJson?.items) ? cbJson.items : [];
+            for (const entry of cbItems) {
+              const blk = Number(entry.block_number || 0);
+              if (cutoffBlock > 0 && blk > 0 && blk < cutoffBlock) {
+                stopCbScan = true;
+                break;
+              }
+              const deltaXtz = parseFloat(entry.delta || '0') / 1e18;
+              const txHash = String(entry.transaction_hash || '').toLowerCase();
+              if (deltaXtz > 1 && txHash && !recordedInflowHashes.has(txHash)) {
+                if (!cbMetaByHash.has(txHash)) {
+                  cbMetaByHash.set(txHash, { block: blk, timestamp: entry.block_timestamp });
+                  missingTxHashes.push(txHash);
+                  recoveredDeltaXtz += deltaXtz;
+                  if (recoveredDeltaXtz >= targetDeficitXtz) {
+                    stopCbScan = true;
+                    break;
+                  }
+                }
+              }
+            }
+            const qs = buildV2NextQuery(cbJson?.next_page_params);
+            if (!qs) break;
+            nextCbQs = qs;
+          }
+
+          if (missingTxHashes.length > 0) {
+            const recoveredLists = await Promise.all(
+              missingTxHashes.slice(0, 5).map((hash) =>
+                fetch(`${ETHERLINK_API_BASE}/transactions/${hash}/internal-transactions?items_count=100`)
+                  .then((r) => (r.ok ? r.json() : null))
+                  .catch(() => null)
+              )
+            );
+            recoveredLists.forEach((res, idx) => {
+              const fallbackMeta = cbMetaByHash.get(missingTxHashes[idx]) || {};
+              const items = Array.isArray(res?.items) ? res.items : [];
+              items.forEach((itx) => {
+                rememberPartyAlias(itx.from);
+                rememberPartyAlias(itx.to);
+                const rawVal = parseFloat(itx.value || '0');
+                if (!itx.success || !rawVal || rawVal <= 0) return;
+                const sender = makeParty(itx.from?.hash, itx.from?.name);
+                const target = makeParty(itx.to?.hash, itx.to?.name);
+                if (!sender.address || !target.address) return;
+                if (sender.address !== evmAddress && target.address !== evmAddress) return;
+                const txHash = itx.transaction_hash || missingTxHashes[idx];
+                const blk = Number(itx.block_number || fallbackMeta.block || 0);
+                if (cutoffBlock > 0 && blk > 0 && blk < cutoffBlock) return;
+                const dedupKey = `${txHash}:${sender.address}:${target.address}:${itx.index ?? ''}`;
+                const pairKey = `${txHash}:${sender.address}:${target.address}`;
+                if (seenKeys.has(dedupKey) || seenKeys.has(pairKey)) return;
+                seenKeys.add(dedupKey);
+                seenKeys.add(pairKey);
+                txData.push({
+                  _dedupKey: dedupKey,
+                  id: blk,
+                  hash: txHash,
+                  timestamp: itx.timestamp || fallbackMeta.timestamp,
+                  amount: (rawVal / 1e18) * 1_000_000,
+                  sender,
+                  target
+                });
+              });
+            });
+          }
+        } catch (err) {
+          console.warn('Coin balance history recovery failed:', err);
         }
       }
-    });
-  } else {
-    // Fallback if v1 txlist is unavailable: paginate v2 transactions so we never drop to a 50-tx sample
-    const maxV2Pages = Math.min(35, Math.max(1, Math.ceil(batchSize / 50)));
-    const v2Full =
-      v2SampleJson?.next_page_params && maxV2Pages > 1
-        ? await fetchV2TransactionsPaginated(enc, maxV2Pages)
-        : { items: v2SampleJson?.items || [], exhausted: !v2SampleJson?.next_page_params };
-    topExhausted = Boolean(v2Full.exhausted);
-
-    v2Full.items.forEach((tx) => {
-      rememberPartyAlias(tx.from);
-      rememberPartyAlias(tx.to);
-      const blk = Number(tx.block_number || 0);
-      if (blk > 0 && blk < minTopBlock) minTopBlock = blk;
-
-      const isOk = tx.status === 'ok' || tx.result === 'success';
-      const rawVal = parseFloat(tx.value || '0');
-      if (!isOk || !rawVal || rawVal <= 0) return;
-
-      const sender = makeParty(tx.from?.hash, tx.from?.name);
-      const target = makeParty(tx.to?.hash, tx.to?.name);
-      if (!sender.address || !target.address) return;
-
-      const dedupKey = `${tx.hash}:${sender.address}:${target.address}`;
-      if (seenKeys.has(dedupKey)) return;
-      seenKeys.add(dedupKey);
-
-      const l1WithdrawTarget =
-        target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE
-          ? extractTezosL1AddressFromHex(tx.raw_input)
-          : null;
-
-      const normAmt = (rawVal / 1e18) * 1_000_000;
-      txData.push({
-        _dedupKey: dedupKey,
-        id: blk,
-        hash: tx.hash,
-        timestamp: tx.timestamp,
-        amount: normAmt,
-        sender,
-        target,
-        l1WithdrawTarget
-      });
-
-      if (isWithdrawPrecompile && target.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE && l1WithdrawTarget) {
-        const outKey = `${tx.hash}:l1-out:${ETHERLINK_L2_WITHDRAW_PRECOMPILE}:${l1WithdrawTarget}`;
-        if (!seenKeys.has(outKey)) {
-          seenKeys.add(outKey);
-          txData.push({
-            _dedupKey: outKey,
-            id: blk,
-            hash: tx.hash,
-            timestamp: tx.timestamp,
-            amount: normAmt,
-            sender: { address: ETHERLINK_L2_WITHDRAW_PRECOMPILE, alias: 'Etherlink L1 Withdraw' },
-            target: { address: ETHERLINK_WITHDRAW_CONTRACT, alias: 'Etherlink Withdraw' },
-            l1WithdrawTarget
-          });
-        }
-      }
-    });
-  }
-
-  let intExhausted = true;
-  let minIntBlock = Infinity;
-
-  if (Array.isArray(intV2Result?.items)) {
-    intExhausted = Boolean(intV2Result.exhausted);
-    intV2Result.items.forEach((itx) => {
-      const blk = Number(itx.block_number || 0);
-      if (blk > 0 && blk < minIntBlock) minIntBlock = blk;
-
-      const rawVal = parseFloat(itx.value || '0');
-      if (!itx.success || !rawVal || rawVal <= 0) return;
-      const sender = makeParty(itx.from?.hash, itx.from?.name);
-      const target = makeParty(itx.to?.hash, itx.to?.name);
-      if (!sender.address || !target.address) return;
-      if (
-        sender.address === ETHERLINK_L2_WITHDRAW_PRECOMPILE &&
-        seenKeys.has(`${itx.transaction_hash}:${ETHERLINK_L2_FEED_ADDRESS}:${target.address}`)
-      ) {
-        return;
-      }
-      const dedupKey = `${itx.transaction_hash}:${sender.address}:${target.address}:${itx.index ?? ''}`;
-      const pairKey = `${itx.transaction_hash}:${sender.address}:${target.address}`;
-      if (seenKeys.has(dedupKey) || seenKeys.has(pairKey)) return;
-      seenKeys.add(dedupKey);
-      seenKeys.add(pairKey);
-      txData.push({
-        _dedupKey: dedupKey,
-        id: blk,
-        hash: itx.transaction_hash,
-        timestamp: itx.timestamp,
-        amount: (rawVal / 1e18) * 1_000_000,
-        sender,
-        target
-      });
-    });
-  }
-
-  // Align the block window if either top-level or internal transactions were truncated at the fetch limit
-  if (!isFeedAddress && !isWithdrawPrecompile && (!topExhausted || !intExhausted)) {
-    const cutoffBlock = Math.max(
-      !topExhausted && Number.isFinite(minTopBlock) ? minTopBlock : 0,
-      !intExhausted && Number.isFinite(minIntBlock) ? minIntBlock : 0
-    );
-    if (cutoffBlock > 0) {
-      txData = txData.filter((op) => !op.id || op.id >= cutoffBlock);
     }
   }
 
-  // 3. Parse ERC-20 Token Transfers (USDT / tzBTC) when enabled
+  // 3. Parse ERC-20 Token Transfers (USDT, USDC, WXTZ, WETH, LBTC, WBTC, xU3O8) & LayerZero Bridge recognition
   const faData = existing?.faData ? [...existing.faData] : [];
+  const seenFaKeys = new Set(faData.map((f) => f._dedupKey || `${f.hash}:${f['token.contract.address']}:${f.from?.address}:${f.to?.address}`));
+  const isZeroHub = evmAddress === ETHERLINK_ZERO_ADDRESS;
+
   if (Array.isArray(tokenTxJson?.items)) {
     tokenTxJson.items.forEach((tr) => {
       rememberPartyAlias(tr.from);
       rememberPartyAlias(tr.to);
       const sym = String(tr.token?.symbol || '').toLowerCase();
       const cAddr = String(tr.token?.address_hash || '').toLowerCase();
-      let mappedContract = null;
-      if (sym === 'usdt' || cAddr === ETHERLINK_USDT_CONTRACT) {
-        mappedContract = TOKEN_DEFINITIONS.usdt.contract;
-      } else if (sym === 'tzbtc') {
-        mappedContract = TOKEN_DEFINITIONS.tzbtc.contract;
-      }
-      if (!mappedContract) return;
+      const tokenKey =
+        CONTRACT_TO_TOKEN_KEY.get(cAddr) ||
+        (sym === 'usdt' || sym === 'usdt0'
+          ? 'usdt_l2'
+          : sym === 'usdc' || sym === 'usdc.e'
+          ? 'usdc'
+          : sym === 'wxtz'
+          ? 'wxtz'
+          : sym === 'weth' || sym === 'weth.e'
+          ? 'weth'
+          : sym === 'lbtc'
+          ? 'lbtc'
+          : sym === 'wbtc' || sym === 'wbtc.e'
+          ? 'wbtc'
+          : sym === 'xu3o8'
+          ? 'xu3o8'
+          : sym === 'tzbtc'
+          ? 'tzbtc'
+          : null);
+      if (!tokenKey || !TOKEN_DEFINITIONS[tokenKey]) return;
 
-      const fromParty = makeParty(tr.from?.hash, tr.from?.name);
-      const toParty = makeParty(tr.to?.hash, tr.to?.name);
-      const dec = Number(tr.total?.decimals || tr.token?.decimals || 6);
-      const targetDec = mappedContract === TOKEN_DEFINITIONS.tzbtc.contract ? 8 : 6;
+      const tokenDef = TOKEN_DEFINITIONS[tokenKey];
+      const mappedContract = tokenDef.contract;
+
+      const rawFromHash = String(tr.from?.hash || '').toLowerCase();
+      const rawToHash = String(tr.to?.hash || '').toLowerCase();
+      const methodLower = String(tr.method || '').toLowerCase();
+      const trType = String(tr.type || '').toLowerCase();
+      const isLzMethod = ETHERLINK_LZ_BRIDGE_METHODS.has(methodLower);
+      const isBridgedToken = ETHERLINK_BRIDGED_TOKEN_KEYS.has(tokenKey);
+
+      let fromParty = makeParty(tr.from?.hash, tr.from?.name);
+      let toParty = makeParty(tr.to?.hash, tr.to?.name);
+
+      // Recognize LayerZero bridge-in (token minting from 0x000...000 or cross-chain bridge pool)
+      if (!rawFromHash || rawFromHash === ETHERLINK_ZERO_ADDRESS || trType === 'token_minting') {
+        if (isZeroHub) {
+          fromParty = { address: ETHERLINK_ZERO_ADDRESS, alias: 'Zero / Mint & Burn Address (0x0)' };
+        } else if (isBridgedToken || isLzMethod) {
+          fromParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
+        } else if (tokenKey === 'wxtz') {
+          fromParty = { address: ETHERLINK_WXTZ_CONTRACT, alias: 'Wrapped XTZ (WXTZ)' };
+        } else if (tokenKey === 'xu3o8') {
+          fromParty = { address: ETHERLINK_XU3O8_CONTRACT, alias: 'Uranium (xU3O8)' };
+        }
+      } else if (
+        !isZeroHub &&
+        (rawFromHash === ETHERLINK_LBTC_TOKEN_POOL ||
+          rawFromHash === ETHERLINK_LBTC_BRIDGE_OFFRAMP ||
+          rawFromHash === ETHERLINK_LBTC_BRIDGE_ROUTER ||
+          rawFromHash === ETHERLINK_LZ_ULN_CONTRACT)
+      ) {
+        fromParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
+      }
+
+      // Recognize LayerZero bridge-out (token burning to 0x000...000 or cross-chain bridge pool)
+      if (!rawToHash || rawToHash === ETHERLINK_ZERO_ADDRESS || trType === 'token_burning') {
+        if (isZeroHub) {
+          toParty = { address: ETHERLINK_ZERO_ADDRESS, alias: 'Zero / Mint & Burn Address (0x0)' };
+        } else if (isBridgedToken || isLzMethod) {
+          toParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
+        } else if (tokenKey === 'wxtz') {
+          toParty = { address: ETHERLINK_WXTZ_CONTRACT, alias: 'Wrapped XTZ (WXTZ)' };
+        } else if (tokenKey === 'xu3o8') {
+          toParty = { address: ETHERLINK_XU3O8_CONTRACT, alias: 'Uranium (xU3O8)' };
+        }
+      } else if (
+        !isZeroHub &&
+        (rawToHash === ETHERLINK_LBTC_TOKEN_POOL ||
+          rawToHash === ETHERLINK_LBTC_BRIDGE_OFFRAMP ||
+          rawToHash === ETHERLINK_LBTC_BRIDGE_ROUTER ||
+          rawToHash === ETHERLINK_LZ_ULN_CONTRACT)
+      ) {
+        toParty = { address: ETHERLINK_LZ_BRIDGE_CONTRACT, alias: 'LayerZero Bridge' };
+      }
+
+      const dec = Number(tr.total?.decimals || tr.token?.decimals || tokenDef.decimals || 6);
+      const targetDec = Number(tokenDef.decimals || 6);
       const rawVal = parseFloat(tr.total?.value || '0');
       const scaledAmount = (rawVal / Math.pow(10, dec)) * Math.pow(10, targetDec);
+      if (!scaledAmount || scaledAmount <= 0) return;
+
+      const faDedupKey = `${tr.transaction_hash}:${mappedContract}:${fromParty.address}:${toParty.address}:${tr.log_index ?? ''}`;
+      if (seenFaKeys.has(faDedupKey)) return;
+      seenFaKeys.add(faDedupKey);
 
       faData.push({
+        _dedupKey: faDedupKey,
         id: Number(tr.block_number || 0),
         timestamp: tr.timestamp,
         'token.contract.address': mappedContract,
@@ -1663,27 +2140,32 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
         hash: tr.transaction_hash
       });
     });
+
+    faData.sort((a, b) => (b.id || 0) - (a.id || 0));
   }
 
   cache.set(evmAddress, {
     txData,
     specialOps: [],
     specialOpsFetched: true,
-    internalChecked: true,
-    l1DepositsChecked: true,
-    limit: Math.max(txData.length, numLimit),
+    internalChecked: needXtz ? true : Boolean(existing?.internalChecked),
+    l1DepositsChecked: needXtz ? true : Boolean(existing?.l1DepositsChecked),
+    limit: needXtz ? Math.max(txData.length, numLimit) : existing?.limit || 0,
     lastOffset: null,
-    exhausted: true,
+    exhausted: needXtz ? true : Boolean(existing?.exhausted),
     faData,
     faLimit: needFa ? Math.max(faData.length, numLimit) : existing?.faLimit || 0,
     faLastOffset: null,
-    faExhausted: needFa ? true : Boolean(existing?.faExhausted),
+    faExhausted: L2_ERC20_TOKEN_KEYS.every((k) => fetchedL2Tokens.has(k)),
+    fetchedL2Tokens,
+    unfilteredTried: needFaFetch ? true : Boolean(existing?.unfilteredTried),
+    unfilteredFaComplete: unfilteredFaShortCircuit,
     accountInfo
   });
 
   return {
     operations: needXtz ? txData.slice(0, numLimit) : [],
-    faTransfers: needFa ? faData.slice(0, numLimit) : [],
+    faTransfers: needFa ? faData : [],
     accountInfo
   };
 }
@@ -1781,7 +2263,7 @@ async function fetchAllData(tezosAddress, requestedLimit) {
 
   const numLimit = Number(requestedLimit) || 10000;
   const needXtz = viewConfig.enabledTokens.has('xtz');
-  const needFa = viewConfig.faEnabled;
+  const needFa = L1_FA_TOKEN_KEYS.some((k) => viewConfig.enabledTokens.has(k));
 
   if (cache.has(tezosAddress)) {
     const cached = cache.get(tezosAddress);
@@ -1803,12 +2285,10 @@ async function fetchAllData(tezosAddress, requestedLimit) {
   const loaderEl = document.getElementById('loader');
   const loaderStatus = document.getElementById('loader-status');
   const emptyState = document.getElementById('empty-state');
-  const colHeadersEl = document.getElementById('sankey-col-headers');
   const diagramEl = document.getElementById('sankey-diagram');
   const statsStrip = document.getElementById('stats-strip');
 
   if (emptyState) emptyState.style.display = 'none';
-  if (colHeadersEl) colHeadersEl.style.display = 'none';
   if (diagramEl) diagramEl.style.display = 'none';
   if (statsStrip) statsStrip.style.display = 'none';
   if (loaderEl) loaderEl.style.display = 'flex';
@@ -1832,7 +2312,7 @@ async function fetchAllData(tezosAddress, requestedLimit) {
         const tokenBalances =
           (existing.accountInfo.tokenBalancesCount ?? 1) > 0
             ? await fetchAccountTokenBalances(tezosAddress)
-            : { tzbtc: 0, usdt: 0 };
+            : createEmptyTokenBalances();
         existing.accountInfo = {
           ...existing.accountInfo,
           tokenBalances,
@@ -1953,10 +2433,19 @@ function parseTransactions(data, faTransfers, tezosAddress, tezLimitVal) {
   const addressToAliasMap = new Map();
   const txHashesMap = new Map();
 
+  addressToAliasMap.set(ETHERLINK_ZERO_ADDRESS, 'Zero / Mint & Burn Address (0x0)');
   addressToAliasMap.set(ETHERLINK_BRIDGE_CONTRACT, 'Etherlink Bridge');
   addressToAliasMap.set(ETHERLINK_WITHDRAW_CONTRACT, 'Etherlink Withdraw');
   addressToAliasMap.set(ETHERLINK_L2_FEED_ADDRESS, 'Etherlink L1 Deposit');
   addressToAliasMap.set(ETHERLINK_L2_WITHDRAW_PRECOMPILE, 'Etherlink L1 Withdraw');
+  addressToAliasMap.set(ETHERLINK_LZ_BRIDGE_CONTRACT, 'LayerZero Bridge');
+  addressToAliasMap.set(ETHERLINK_LZ_ULN_CONTRACT, 'LayerZero UltraLightNodeV2');
+  addressToAliasMap.set(ETHERLINK_WXTZ_CONTRACT, 'Wrapped XTZ (WXTZ)');
+  addressToAliasMap.set(ETHERLINK_USDC_CONTRACT, 'LayerZero Bridged USDC');
+  addressToAliasMap.set(ETHERLINK_USDT_CONTRACT, 'Tether USD (USDT)');
+  addressToAliasMap.set(ETHERLINK_WETH_CONTRACT, 'Bridged WETH');
+  addressToAliasMap.set(ETHERLINK_LBTC_CONTRACT, 'Lombard Staked Bitcoin (LBTC)');
+  addressToAliasMap.set(ETHERLINK_XU3O8_CONTRACT, 'Uranium (xU3O8)');
 
   function recordUnifiedFlow(map, keyAddress, displayAlias, amount, timestamp, opRef, isSpecial = false, tokenKey = 'xtz') {
     if (!amount || amount <= 0) return;
@@ -2381,8 +2870,6 @@ function refreshDiagramFromMemory() {
   document.getElementById('empty-state').style.display = 'none';
   document.getElementById('stats-strip').style.display = 'grid';
   document.getElementById('sankey-workspace').style.display = 'flex';
-  const colHeadersEl = document.getElementById('sankey-col-headers');
-  if (colHeadersEl) colHeadersEl.style.display = '';
   document.getElementById('sankey-diagram').style.display = 'block';
 
   renderCurrentSankey();
@@ -2775,22 +3262,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
     : rawOutflows;
   const outflows = sortAndGroupFlows(effectiveRawOutflows, 'out', totalOutByToken, totalOutEquivTez);
 
-  // Update column headers
-  const hdrIn = document.getElementById('hdr-inflows-label');
-  const hdrOut = document.getElementById('hdr-outflows-label');
-  const hdrCenter = document.getElementById('hdr-center-label');
-  if (hdrIn) {
-    const circNote = mergedCircularAddresses.size > 0 ? ` • ${mergedCircularAddresses.size} Circular ↺` : '';
-    hdrIn.textContent = `Inflows (${rawInflows.length} Senders • ${formatMultiTokenSummaryPlain(totalInByToken, true)}${circNote})`;
-  }
-  if (hdrOut) {
-    hdrOut.textContent = `Outflows (${externalRawOutflows.length} Receivers • ${formatMultiTokenSummaryPlain(totalOutByToken, true)})`;
-  }
   const isL2Hub = isEtherlinkAddress(targetAddress);
-  const hubAlias = addressToAliasMap.get(targetAddress) || currentAccountInfo?.alias || shortenAddress(targetAddress);
-  if (hdrCenter) {
-    hdrCenter.textContent = `${isL2Hub ? 'Etherlink L2 Hub' : 'Target Hub'} — ${hubAlias}`;
-  }
 
   if (inflows.length === 0 && outflows.length === 0 && !selfLoopEntry) {
     container.innerHTML = `
@@ -3206,7 +3678,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         <stop offset="100%" stop-color="#fde047" stop-opacity="0.92" />
       </linearGradient>
 
-      <!-- USDt (KT1XnTn74bUtxHfDtBmm2bGZAQfhPbvKWR8o) Distinct Electric Cyan / Sky Gradients -->
+      <!-- USDt (KT1XnTn74bUtxHfDtBmm2bGZAQfhPbvKWR8o / 0x2C03…) Distinct Electric Cyan / Sky Gradients -->
       <linearGradient id="grad-inflow-usdt" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.9" />
         <stop offset="50%" stop-color="#06b6d4" stop-opacity="0.8" />
@@ -3221,6 +3693,108 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
         <stop offset="0%" stop-color="#0284c7" stop-opacity="0.92" />
         <stop offset="50%" stop-color="#06b6d4" stop-opacity="0.88" />
         <stop offset="100%" stop-color="#67e8f9" stop-opacity="0.92" />
+      </linearGradient>
+
+      <!-- USDC (0x796Ea11Fa2dD751eD01b53C372fFDB4AAa8f00F9) USD Coin Blue Gradients -->
+      <linearGradient id="grad-inflow-usdc" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#1d4ed8" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-usdc" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#1d4ed8" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-usdc" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#1d4ed8" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#93c5fd" stop-opacity="0.92" />
+      </linearGradient>
+
+      <!-- WXTZ (0xc9B53AB2679f573e480d01e0f49e2B5CFB7a3EAb) Wrapped XTZ Indigo Gradients -->
+      <linearGradient id="grad-inflow-wxtz" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#a5b4fc" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#6366f1" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#4338ca" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-wxtz" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#4338ca" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#6366f1" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#a5b4fc" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-wxtz" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#4338ca" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#6366f1" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#c7d2fe" stop-opacity="0.92" />
+      </linearGradient>
+
+      <!-- WETH (0xfc24f770F94edBca6D6f885E12d4317320BcB401) Bridged WETH Purple Gradients -->
+      <linearGradient id="grad-inflow-weth" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#c084fc" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#a855f7" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#7e22ce" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-weth" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#7e22ce" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#a855f7" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#c084fc" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-weth" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#7e22ce" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#a855f7" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#e9d5ff" stop-opacity="0.92" />
+      </linearGradient>
+
+      <!-- LBTC (0xecAc9C5F704e954931349Da37F60E39f515c11c1) Lombard Staked Bitcoin Amber/Gold Gradients -->
+      <linearGradient id="grad-inflow-lbtc" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#fcd34d" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#d97706" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#92400e" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-lbtc" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#92400e" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#d97706" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#fcd34d" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-lbtc" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#92400e" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#d97706" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#fde68a" stop-opacity="0.92" />
+      </linearGradient>
+
+      <!-- WBTC (0xbFc94CD2B1E55999Cfc7347a9313e88702B83d0F) Wrapped BTC Orange Gradients -->
+      <linearGradient id="grad-inflow-wbtc" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#fdba74" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#f97316" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#c2410c" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-wbtc" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#c2410c" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#f97316" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#fdba74" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-wbtc" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#c2410c" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#f97316" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#fed7aa" stop-opacity="0.92" />
+      </linearGradient>
+
+      <!-- xU3O8 (0x79052Ab3C166D4899a1e0DD033aC3b379AF0B1fD) Uranium Lime Gradients -->
+      <linearGradient id="grad-inflow-xu3o8" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#bef264" stop-opacity="0.9" />
+        <stop offset="50%" stop-color="#84cc16" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#4d7c0f" stop-opacity="0.88" />
+      </linearGradient>
+      <linearGradient id="grad-outflow-xu3o8" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#4d7c0f" stop-opacity="0.88" />
+        <stop offset="50%" stop-color="#84cc16" stop-opacity="0.82" />
+        <stop offset="100%" stop-color="#bef264" stop-opacity="0.9" />
+      </linearGradient>
+      <linearGradient id="grad-circular-xu3o8" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#4d7c0f" stop-opacity="0.92" />
+        <stop offset="50%" stop-color="#84cc16" stop-opacity="0.88" />
+        <stop offset="100%" stop-color="#d9f99d" stop-opacity="0.92" />
       </linearGradient>
 
       <linearGradient id="grad-self-loop" x1="100%" y1="0%" x2="0%" y2="0%">
@@ -4423,6 +4997,17 @@ async function openInspectorDrawer(entry, side) {
   const combinedRawRefs = entry.hasCircularReturn
     ? Array.from(new Set([...(entry.txHashes || []), ...(entry.returnEntry?.txHashes || [])]))
     : entry.txHashes || [];
+
+  const opsLabelEl = document.getElementById('drawer-ops-label');
+  if (opsLabelEl) {
+    const usesBlockscout =
+      isEtherlinkAddress(currentAddress) ||
+      isEtherlinkAddress(targetExplorerAddr) ||
+      combinedRawRefs.some((r) => isEtherlinkTxHash(r));
+    opsLabelEl.textContent = usesBlockscout
+      ? 'Related Operations (Blockscout)'
+      : 'Related Operations (TzKT)';
+  }
 
   const subBranchesHtml =
     Array.isArray(entry.subBranches) && entry.subBranches.length > 0
