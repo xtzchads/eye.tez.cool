@@ -285,6 +285,8 @@ body.frame-mode #container {
 /* Unified Sankey Workspace Container */
 #sankey-workspace {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg-card);
@@ -300,6 +302,8 @@ body.frame-mode #container {
 /* Unified Block Header / Diagram Toolbar */
 .diagram-toolbar {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -457,6 +461,8 @@ h1 {
 .search-input-wrapper {
   position: relative;
   flex: 1;
+  min-width: 0;
+  width: 100%;
   display: flex;
   align-items: center;
 }
@@ -472,6 +478,7 @@ h1 {
 
 #target-address {
   width: 100%;
+  min-width: 0;
   height: 34px;
   padding: 0 82px 0 34px;
   font-family: var(--font-mono);
@@ -481,6 +488,7 @@ h1 {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   outline: none;
+  text-overflow: ellipsis;
   transition: all 0.2s ease;
 }
 
@@ -1929,6 +1937,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
 }
 
+@media (max-width: 900px) {
+  .button-container {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    order: 3;
+  }
+}
+
 @media (max-width: 768px) {
   #container {
     padding: 96px 10px 36px;
@@ -1943,10 +1961,38 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
 
   .button-container {
+    flex: 1 1 100%;
     min-width: 0;
     max-width: 100%;
     width: 100%;
     order: 3;
+    gap: 6px;
+  }
+
+  .nav-button {
+    width: 38px;
+    height: 38px;
+  }
+
+  #target-address {
+    height: 38px;
+    font-size: 16px;
+    padding: 0 84px 0 34px;
+  }
+
+  #target-address::placeholder {
+    font-size: 0.78rem;
+  }
+
+  .search-submit-btn {
+    height: 30px;
+  }
+
+  .address-dropdown {
+    left: -44px;
+    right: -44px;
+    width: auto;
+    max-height: 280px;
   }
 
   .toolbar-controls-row .toolbar-group {
@@ -2013,6 +2059,18 @@ input[type="range"]::-webkit-slider-thumb:hover {
   #container {
     padding-top: 142px;
   }
+
+  .search-submit-btn span {
+    display: none;
+  }
+
+  .search-submit-btn {
+    padding: 0 10px;
+  }
+
+  #target-address {
+    padding-right: 44px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -2022,14 +2080,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
   #stats-strip {
     grid-template-columns: 1fr;
-  }
-
-  .search-submit-btn span {
-    display: none;
-  }
-
-  #target-address {
-    padding-right: 48px;
   }
 
   .fa-tokens-control {
