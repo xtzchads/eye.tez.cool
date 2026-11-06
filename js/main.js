@@ -5507,7 +5507,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
   const hubBadgeW = isL2Hub ? 104 : 92;
 
   const centerHubMarkup = `
-    <g class="sankey-hub-group" id="sankey-center-hub" style="cursor: pointer;">
+    <g class="sankey-hub-group" id="sankey-center-hub">
       <clipPath id="hub-avatar-clip">
         <circle cx="${hubMidX}" cy="${avatarCy}" r="${avatarR}" />
       </clipPath>
@@ -5565,7 +5565,7 @@ function drawSankeyDiagram(targetAddress, rawInflows, rawOutflows, addressToAlia
 
       <!-- Hub Footer Hint -->
       <text x="${hubMidX}" y="${hubFooterY}" text-anchor="middle" fill="${isL2Hub ? '#34d399' : '#818cf8'}" font-family="Inter, sans-serif" font-size="10">
-        Click to copy address
+        Click avatar for Explorer
       </text>
     </g>
   `;
@@ -6035,7 +6035,7 @@ function bindSankeyInteractions(
       </div>
       ${tokenRowsHtml}
       <div class="tt-footer">
-        <span>Click to copy target address</span>
+        <span>Click avatar to open in explorer</span>
       </div>
     `;
     tooltip.style.display = 'block';
@@ -6217,14 +6217,8 @@ function bindSankeyInteractions(
       return;
     }
 
-    const itemEl = evt.target.closest('.sankey-node-group, .sankey-link-wrap, #sankey-center-hub');
+    const itemEl = evt.target.closest('.sankey-node-group, .sankey-link-wrap');
     if (!itemEl) return;
-
-    if (itemEl.id === 'sankey-center-hub') {
-      navigator.clipboard.writeText(targetAddress).catch(() => { });
-      showNotification(`Copied target address: ${shortenAddress(targetAddress)}`);
-      return;
-    }
 
     const side = itemEl.dataset.side;
     const idx = Number(itemEl.dataset.index);
