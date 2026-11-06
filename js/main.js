@@ -968,7 +968,7 @@ function updateSliderTrack(slider) {
 // ============================================================================
 
 let notificationTimer = null;
-function showNotification(message = 'Address and transactions copied to clipboard/console') {
+function showNotification(message = 'Address and transactions copied to clipboard') {
   const notification = document.getElementById('notification');
   const textSpan = document.getElementById('notification-text');
   if (!notification) return;
@@ -1061,7 +1061,6 @@ async function fetchAddressSuggestions(query) {
       }, 1800);
     }
   } catch (err) {
-    console.error('Error fetching address suggestions:', err);
     dropdown.style.display = 'none';
   }
 }
@@ -1704,18 +1703,10 @@ async function fetchOperationsBatch(tezosAddress, lastId = 0, batchLimit = 10000
   try {
     const response = await tzktFetch(url);
     if (!response.ok) {
-      const errType =
-        response.status >= 500
-          ? '5xx Server Error'
-          : response.status === 429
-            ? '429 Rate Limit'
-            : '4xx Client Error';
-      console.error(`TzKT ${errType} (HTTP ${response.status}) fetching operations batch`);
       return null;
     }
     return await response.json();
   } catch (err) {
-    console.error('Network error fetching operations batch:', err);
     return null;
   }
 }
@@ -1786,7 +1777,7 @@ async function enrichBridgeDepositParameters(txData) {
           }
         }
       } catch (err) {
-        console.error('Error enriching Etherlink bridge parameters:', err);
+        // Ignore enrichment errors
       }
     })
   );
@@ -1998,13 +1989,6 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
       try {
         const res = await blockscoutFetch(`${ETHERLINK_API_BASE}${endpointPath}${qs}`);
         if (!res.ok) {
-          const errType =
-            res.status >= 500
-              ? '5xx Server Error'
-              : res.status === 429
-                ? '429 Rate Limit'
-                : '4xx Client Error';
-          console.error(`Blockscout ${errType} (HTTP ${res.status}) fetching ${endpointPath}`);
           return { ok: false, status: res.status };
         }
         const json = await res.json();
@@ -2032,7 +2016,6 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
           minBlock: Number.isFinite(minBlock) ? minBlock : 0
         };
       } catch (err) {
-        console.error(`Network error fetching Blockscout ${endpointPath}:`, err);
         return { ok: false, status: 0 };
       }
     }
@@ -2981,7 +2964,7 @@ async function fetchEtherlinkData(rawEvmAddress, requestedLimit) {
             });
           }
         } catch (err) {
-          console.warn('Coin balance history recovery failed:', err);
+          // Ignore coin balance history recovery errors
         }
       }
     }
@@ -3291,18 +3274,10 @@ async function fetchFaTransfersBatch(tezosAddress, lastId = 0, batchLimit = 1000
   try {
     const response = await tzktFetch(url);
     if (!response.ok) {
-      const errType =
-        response.status >= 500
-          ? '5xx Server Error'
-          : response.status === 429
-            ? '429 Rate Limit'
-            : '4xx Client Error';
-      console.error(`TzKT ${errType} (HTTP ${response.status}) fetching FA token transfers batch`);
       return null;
     }
     return await response.json();
   } catch (err) {
-    console.error('Network error fetching FA token transfers batch:', err);
     return null;
   }
 }
@@ -3345,7 +3320,7 @@ async function resolveTxRefsToHashes(refs) {
             }
           }
         } catch (err) {
-          console.error('Error resolving transactionIds to hashes:', err);
+          // Ignore hash resolution errors
         }
       })
     );
@@ -4235,9 +4210,6 @@ function updateStatsStrip(targetAddress, inflows, outflows, opsCount, accountInf
 
   const amXtzIn = inByToken.get('xtz') || 0;
   const amXtzOut = outByToken.get('xtz') || 0;
-  console.log(
-    `inputs:${numInflows}; outputs:${numOutflows}\r\nin:${amXtzIn.toFixed(2)}; out:${amXtzOut.toFixed(2)}`
-  );
 
   const inValEl = document.getElementById('stat-inflow-val');
   const outValEl = document.getElementById('stat-outflow-val');
@@ -4326,7 +4298,7 @@ function updateStatsStrip(targetAddress, inflows, outflows, opsCount, accountInf
     metaParts.push(`${selfCount} self-tx (↺)`);
   }
   document.getElementById('stat-scope-meta').textContent =
-    metaParts.length > 0 ? metaParts.join(' • ') : 'Click any node to copy & pivot';
+    metaParts.length > 0 ? metaParts.join(' • ') : 'Click any node to pivot';
 }
 
 // ============================================================================
@@ -5974,8 +5946,8 @@ function bindSankeyInteractions(
         <span>${entry.isAggregate
         ? 'Click to expand all'
         : entry.isSelfTransfer
-          ? 'Click: Copy &amp; Inspect Self-Txes'
-          : 'Click: Copy &amp; Pivot • ⋯: Tx List'
+          ? 'Click: Inspect Self-Txes'
+          : 'Click: Pivot • ⋯: Tx List'
       }</span>
       </div>
     `;
@@ -6085,23 +6057,6 @@ function bindSankeyInteractions(
     tooltip.style.transform = `translate3d(${Math.max(8, x)}px, ${Math.max(8, y)}px, 0)`;
   }
 
-  async function copyEntryToClipboard(entry) {
-    const relatedAddress = entry.realAddress;
-    const rawRefs = txHashesMap.get(relatedAddress) || entry.txHashes || [];
-    const resolvedHashes = await resolveTxRefsToHashes(rawRefs);
-    const txHashesText = resolvedHashes.map((hash) => getExplorerTxUrl(hash, relatedAddress)).join('\n');
-    const clipboardText = `${relatedAddress}\n\n${txHashesText}`;
-    navigator.clipboard
-      .writeText(clipboardText)
-      .then(() => {
-        console.log(clipboardText);
-      })
-      .catch((err) => {
-        console.error('Could not copy text:', err);
-      });
-    showNotification(`Copied ${shortenAddress(relatedAddress)} & ${resolvedHashes.length} tx links`);
-  }
-
   function handlePrimaryNodeAction(entry) {
     if (!entry) return;
     clearHighlight();
@@ -6116,8 +6071,6 @@ function bindSankeyInteractions(
       showNotification(`Expanded diagram to show ${nextMax === 9999 ? 'all' : 'top ' + nextMax} nodes`);
       return;
     }
-
-    copyEntryToClipboard(entry);
 
     if (entry.isSelfTransfer) {
       openInspectorDrawer(entry, 'self');
@@ -6240,10 +6193,6 @@ function bindSankeyInteractions(
       const branch = entry?.visibleBranches?.[bIdx] || entry?.subBranches?.[bIdx];
       const branchAddr = branch?.address || branchEl.dataset.branchAddr;
       if (branchAddr) {
-        const txLinks = (branch?.txHashes || []).map((h) => getExplorerTxUrl(h, entry?.realAddress || branchAddr)).join('\n');
-        const clipText = txLinks ? `${branchAddr}\n\n${txLinks}` : branchAddr;
-        navigator.clipboard.writeText(clipText).catch(() => { });
-        console.log(clipText);
         const isL2 = (branch?.network || branchEl.dataset.branchNet) === 'etherlink';
         showNotification(`Switched to ${isL2 ? 'Etherlink L2' : 'Tezos L1'} context: ${shortenAddress(branchAddr)}`);
         input.value = branchAddr.trim();
@@ -6273,7 +6222,6 @@ function bindSankeyInteractions(
 
     if (itemEl.id === 'sankey-center-hub') {
       navigator.clipboard.writeText(targetAddress).catch(() => { });
-      console.log(targetAddress);
       showNotification(`Copied target address: ${shortenAddress(targetAddress)}`);
       return;
     }
@@ -6472,8 +6420,7 @@ document.getElementById('drawer-copy-btn')?.addEventListener('click', async () =
   const txText = resolved.map((h) => getExplorerTxUrl(h, inspectedEntry.realAddress)).join('\n');
   const text = `${inspectedEntry.realAddress}\n\n${txText}`;
   navigator.clipboard.writeText(text).catch(() => { });
-  console.log(text);
-  showNotification('Address and transactions copied to clipboard/console');
+  showNotification('Address and transactions copied to clipboard');
 });
 
 // ============================================================================
